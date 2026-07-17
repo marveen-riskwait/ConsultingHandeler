@@ -94,10 +94,22 @@ SAMPLE_CUSTOMERS = [
 
 def setup_commands(app):
 
+    @app.cli.command("sync-rbac")
+    def sync_rbac_cmd():
+        """Provision the permission catalog and default system roles."""
+        from api.rbac import sync_roles
+        sync_roles()
+        click.echo("RBAC synced (permissions + system roles).")
+
     @app.cli.command("seed-demo")
     def seed_demo():
         """Create the demo organization, users, rules and sample customers."""
         from api.engine import risk_engine
+        from api.rbac import sync_roles, get_role
+
+        # RBAC first: permissions + system roles.
+        sync_roles()
+        click.echo("RBAC ready (permissions + roles).")
 
         # Rules (global, idempotent by name).
         for spec in DEFAULT_RULES:
@@ -113,14 +125,21 @@ def setup_commands(app):
             db.session.flush()
 
         demo_users = [
-            ("analyst@demo.io", "Alex Analyst", "ANALYST"),
+            ("analyst@demo.io", "Alex Analyst", "KYC_ANALYST"),
             ("officer@demo.io", "Olivia Officer", "COMPLIANCE_OFFICER"),
-            ("admin@demo.io", "Sam Admin", "ADMIN"),
+            ("admin@demo.io", "Sam Admin", "PLATFORM_ADMIN"),
         ]
-        for email, name, role in demo_users:
-            if not User.query.filter_by(email=email).first():
+        for email, name, role_name in demo_users:
+            role = get_role(role_name)
+            existing = User.query.filter_by(email=email).first()
+            if existing:
+                # keep demo users in sync with the current RBAC definitions
+                existing.role = role_name
+                existing.role_id = role.id if role else None
+            else:
                 db.session.add(User(
-                    email=email, full_name=name, role=role,
+                    email=email, full_name=name, role=role_name,
+                    role_id=role.id if role else None,
                     password=hash_password("demo1234"),
                     organization_id=org.id, is_active=True,
                 ))

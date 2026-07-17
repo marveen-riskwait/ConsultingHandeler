@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Link, useParams } from "react-router-dom";
 import useGlobalReducer from "../hooks/useGlobalReducer";
 import { api } from "../services/api";
+import { can } from "../permissions/can";
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : "—");
 
@@ -29,7 +30,7 @@ export const CaseDetail = () => {
 
   const { case: cs, customer, risk, related_events, audit } = data;
   const closed = cs.status === "CLOSED";
-  const isOfficer = store.user && (store.user.role === "COMPLIANCE_OFFICER" || store.user.role === "ADMIN");
+  const canConfirm = can(store.user, "screening.confirm");
   const sanctionsMatch = related_events.find((e) => e.event_type === "SANCTIONS_MATCH_FOUND");
 
   return (
@@ -135,9 +136,9 @@ export const CaseDetail = () => {
                   <button className="btn btn-outline-success" disabled={busy} onClick={() => decide("FALSE_POSITIVE")}>
                     <i className="fa-solid fa-check" /> False positive
                   </button>
-                  <button className="btn btn-outline-danger" disabled={busy || !isOfficer}
-                    title={isOfficer ? "" : "Compliance Officer only"} onClick={() => decide("CONFIRMED_MATCH")}>
-                    <i className="fa-solid fa-triangle-exclamation" /> Confirm match {isOfficer ? "" : "(officer only)"}
+                  <button className="btn btn-outline-danger" disabled={busy || !canConfirm}
+                    title={canConfirm ? "" : "Requires screening.confirm permission"} onClick={() => decide("CONFIRMED_MATCH")}>
+                    <i className="fa-solid fa-triangle-exclamation" /> Confirm match {canConfirm ? "" : "(no permission)"}
                   </button>
                   <button className="btn btn-outline-warning" disabled={busy} onClick={() => decide("ESCALATE")}>
                     <i className="fa-solid fa-arrow-up" /> Escalate

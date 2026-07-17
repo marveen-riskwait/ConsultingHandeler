@@ -11,14 +11,14 @@ from flask import request, jsonify, Blueprint
 from flask_cors import CORS
 
 from api.models import (
-    db, Organization, User, Customer, Document, RiskAssessment,
+    db, Organization, User, Role, Permission, Customer, Document, RiskAssessment,
     ComplianceEvent, ComplianceRule, Case, Task, Notification, AuditEvent,
-    utcnow, ROLES, CUSTOMER_TYPES,
+    utcnow, ROLES, CUSTOMER_TYPES, PERMISSION_CATALOG,
 )
 from api.utils import APIException
 from api.auth import (
     hash_password, verify_password, make_token, current_user,
-    login_required, role_required,
+    login_required, role_required, permission_required, has_permission,
 )
 from api.engine import risk_engine, audit
 from api.tasks import run_screening
@@ -61,24 +61,32 @@ def register():
     if User.query.filter_by(email=email).first():
         raise APIException("Email already registered", status_code=409)
 
-    role = body.get("role", "ANALYST")
-    if role not in ROLES:
-        role = "ANALYST"
+    role_name = body.get("role", "KYC_ANALYST")
+    if role_name not in ROLES:
+        role_name = "KYC_ANALYST"
+    # First user of a brand-new organization is its administrator.
 
     org_name = (body.get("organization_name") or "").strip()
     org = None
     if org_name:
         org = Organization.query.filter_by(name=org_name).first()
+    is_new_org = org is None
     if org is None:
         org = Organization(name=org_name or f"{email.split('@')[0]}'s org")
         db.session.add(org)
         db.session.flush()
+    if is_new_org:
+        role_name = "PLATFORM_ADMIN"
+
+    from api.rbac import get_role
+    role = get_role(role_name)
 
     user = User(
         email=email,
         password=hash_password(password),
         full_name=body.get("full_name") or email.split("@")[0],
-        role=role,
+        role=role_name,
+        role_id=role.id if role else None,
         organization_id=org.id,
     )
     db.session.add(user)
@@ -108,7 +116,7 @@ def me(user):
 # Customers
 # ---------------------------------------------------------------------------
 @api.route("/customers", methods=["GET"])
-@login_required
+@permission_required("customer.view")
 def list_customers(user):
     customers = (Customer.query
                  .filter_by(organization_id=user.organization_id)
@@ -118,7 +126,7 @@ def list_customers(user):
 
 
 @api.route("/customers", methods=["POST"])
-@login_required
+@permission_required("customer.create")
 def create_customer(user):
     body = request.get_json(silent=True) or {}
     name = (body.get("name") or "").strip()
@@ -148,7 +156,7 @@ def create_customer(user):
 
 
 @api.route("/customers/<int:cid>", methods=["GET"])
-@login_required
+@permission_required("customer.view")
 def customer_overview(user, cid):
     customer = _get_customer_for(user, cid)
     latest = (RiskAssessment.query.filter_by(customer_id=cid)
@@ -181,7 +189,7 @@ def customer_overview(user, cid):
 
 
 @api.route("/customers/<int:cid>/screen", methods=["POST"])
-@login_required
+@permission_required("screening.run")
 def screen_customer(user, cid):
     customer = _get_customer_for(user, cid)
     audit.record("SCREENING_REQUESTED", "customer", customer.id, actor=user,
@@ -195,7 +203,7 @@ def screen_customer(user, cid):
 
 
 @api.route("/customers/<int:cid>/documents", methods=["POST"])
-@login_required
+@permission_required("document.upload")
 def add_document(user, cid):
     customer = _get_customer_for(user, cid)
     body = request.get_json(silent=True) or {}
@@ -216,7 +224,7 @@ def add_document(user, cid):
 
 
 @api.route("/customers/<int:cid>/timeline", methods=["GET"])
-@login_required
+@permission_required("customer.view")
 def customer_timeline(user, cid):
     customer = _get_customer_for(user, cid)
     items = []
@@ -241,7 +249,7 @@ def customer_timeline(user, cid):
 # Workspace — role-based action center
 # ---------------------------------------------------------------------------
 @api.route("/workspace", methods=["GET"])
-@login_required
+@permission_required("workspace.view")
 def workspace(user):
     org_id = user.organization_id
     org_customer_ids = [c.id for c in Customer.query
@@ -299,7 +307,7 @@ def workspace(user):
 # Cases & Tasks
 # ---------------------------------------------------------------------------
 @api.route("/cases", methods=["GET"])
-@login_required
+@permission_required("case.view")
 def list_cases(user):
     org_customer_ids = [c.id for c in Customer.query
                         .filter_by(organization_id=user.organization_id).all()]
@@ -318,7 +326,7 @@ def list_cases(user):
 
 
 @api.route("/cases/<int:case_id>", methods=["GET"])
-@login_required
+@permission_required("case.view")
 def get_case(user, case_id):
     case = Case.query.get(case_id)
     if case is None:
@@ -343,7 +351,7 @@ DECISIONS = {"FALSE_POSITIVE", "CONFIRMED_MATCH", "ESCALATE", "CLEARED"}
 
 
 @api.route("/cases/<int:case_id>/decision", methods=["POST"])
-@login_required
+@permission_required("case.view")
 def decide_case(user, case_id):
     case = Case.query.get(case_id)
     if case is None:
@@ -359,10 +367,15 @@ def decide_case(user, case_id):
         raise APIException("A reason is required for every decision",
                            status_code=400)
 
-    # Confirming a match / overriding is a compliance-officer action.
-    if decision == "CONFIRMED_MATCH" and user.role not in ("COMPLIANCE_OFFICER", "ADMIN"):
-        raise APIException("Only a Compliance Officer can confirm a match",
-                           status_code=403)
+    # Authorization is now permission-based, not role-name based.
+    required_perm = {
+        "CONFIRMED_MATCH": "screening.confirm",
+        "ESCALATE": "case.escalate",
+        "FALSE_POSITIVE": "screening.review",
+        "CLEARED": "screening.review",
+    }[decision]
+    if not has_permission(user, required_perm):
+        raise APIException(f"Missing permission: {required_perm}", status_code=403)
 
     old_status = case.status
     case.decision = decision
@@ -398,7 +411,7 @@ def decide_case(user, case_id):
 
 
 @api.route("/tasks/my-work", methods=["GET"])
-@login_required
+@permission_required("task.view")
 def my_work(user):
     org_customer_ids = [c.id for c in Customer.query
                         .filter_by(organization_id=user.organization_id).all()]
@@ -409,7 +422,7 @@ def my_work(user):
 
 
 @api.route("/tasks/<int:task_id>/complete", methods=["POST"])
-@login_required
+@permission_required("task.complete")
 def complete_task(user, task_id):
     task = Task.query.get(task_id)
     if task is None:
@@ -448,14 +461,14 @@ def read_notification(user, note_id):
 # Rules & Audit (read-only, for transparency)
 # ---------------------------------------------------------------------------
 @api.route("/rules", methods=["GET"])
-@login_required
+@permission_required("rules.view")
 def list_rules(user):
     rules = ComplianceRule.query.order_by(ComplianceRule.event_type).all()
     return jsonify([r.serialize() for r in rules]), 200
 
 
 @api.route("/audit", methods=["GET"])
-@login_required
+@permission_required("audit.view")
 def list_audit(user):
     q = AuditEvent.query
     et = request.args.get("entity_type")
@@ -466,6 +479,22 @@ def list_audit(user):
         q = q.filter(AuditEvent.entity_id == int(eid))
     entries = q.order_by(AuditEvent.created_at.desc()).limit(100).all()
     return jsonify([a.serialize() for a in entries]), 200
+
+
+# ---------------------------------------------------------------------------
+# RBAC (admin) — roles & permission catalog
+# ---------------------------------------------------------------------------
+@api.route("/roles", methods=["GET"])
+@permission_required("roles.manage")
+def list_roles(user):
+    roles = Role.query.order_by(Role.name).all()
+    return jsonify([r.serialize(with_permissions=True) for r in roles]), 200
+
+
+@api.route("/permissions", methods=["GET"])
+@permission_required("roles.manage")
+def list_permissions(user):
+    return jsonify([{"code": c, "label": label} for c, label in PERMISSION_CATALOG]), 200
 
 
 @api.route("/health", methods=["GET"])

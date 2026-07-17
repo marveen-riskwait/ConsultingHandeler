@@ -1,8 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../services/api";
+import useGlobalReducer from "../hooks/useGlobalReducer";
+import { can } from "../permissions/can";
 
 export const Customers = () => {
+  const { store } = useGlobalReducer();
+  const canCreate = can(store.user, "customer.create");
   const [customers, setCustomers] = useState([]);
   const [error, setError] = useState(null);
   const [showForm, setShowForm] = useState(false);
@@ -25,9 +29,11 @@ export const Customers = () => {
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
         <h3 style={{ margin: 0 }}>Customers</h3>
-        <button className="btn btn-co" onClick={() => setShowForm((s) => !s)}>
-          <i className="fa-solid fa-plus" /> New customer
-        </button>
+        {canCreate && (
+          <button className="btn btn-co" onClick={() => setShowForm((s) => !s)}>
+            <i className="fa-solid fa-plus" /> New customer
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger">{error}</div>}

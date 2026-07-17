@@ -47,12 +47,43 @@ def login_required(fn):
     return wrapper
 
 
-def role_required(*roles):
+def has_permission(user, code):
+    """Single source of truth for authorization: role -> permissions."""
+    return user.has_permission(code)
+
+
+def permission_required(*codes, require_all=False):
+    """Guard a route by permission code(s). By default holding ANY of the codes
+    is enough; pass require_all=True to require every one.
+
+    The decorated view receives the authenticated `user` as its first argument
+    (same contract as login_required).
+    """
     def decorator(fn):
         @wraps(fn)
         def wrapper(*args, **kwargs):
             user = current_user()
-            if roles and user.role not in roles and user.role != "ADMIN":
+            if codes:
+                granted = user.permission_codes()
+                ok = (granted.issuperset(codes) if require_all
+                      else any(c in granted for c in codes))
+                if not ok:
+                    joiner = " & " if require_all else " or "
+                    raise APIException(
+                        "Missing permission: " + joiner.join(codes),
+                        status_code=403)
+            return fn(user, *args, **kwargs)
+        return wrapper
+    return decorator
+
+
+def role_required(*roles):
+    """Deprecated in favour of permission_required; kept for any legacy callers."""
+    def decorator(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            user = current_user()
+            if roles and user.role not in roles and user.role not in ("ADMIN", "PLATFORM_ADMIN"):
                 raise APIException("Insufficient permissions", status_code=403)
             return fn(user, *args, **kwargs)
         return wrapper

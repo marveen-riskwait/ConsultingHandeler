@@ -1,5 +1,13 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import useGlobalReducer from "../hooks/useGlobalReducer";
+import { filterByPermission } from "../permissions/can";
+
+// Navigation is generated from permissions. The backend still enforces access;
+// this only hides what the user can't use.
+const NAV_ITEMS = [
+  { to: "/", end: true, icon: "fa-inbox", label: "My Work", permission: "workspace.view" },
+  { to: "/customers", icon: "fa-users", label: "Customers", permission: "customer.view" },
+];
 
 export const Navbar = () => {
   const { store, dispatch } = useGlobalReducer();
@@ -10,18 +18,20 @@ export const Navbar = () => {
     navigate("/");
   };
 
+  const items = filterByPermission(NAV_ITEMS, store.user);
+
   return (
     <nav className="co-nav">
       <div style={{ display: "flex", alignItems: "center", gap: "1.25rem" }}>
         <NavLink to="/" className="brand">
           <span className="dot" /> Compliance OS
         </NavLink>
-        <NavLink to="/" end className={({ isActive }) => "navlink" + (isActive ? " active" : "")}>
-          <i className="fa-solid fa-inbox" /> My Work
-        </NavLink>
-        <NavLink to="/customers" className={({ isActive }) => "navlink" + (isActive ? " active" : "")}>
-          <i className="fa-solid fa-users" /> Customers
-        </NavLink>
+        {items.map((it) => (
+          <NavLink key={it.to} to={it.to} end={it.end}
+            className={({ isActive }) => "navlink" + (isActive ? " active" : "")}>
+            <i className={`fa-solid ${it.icon}`} /> {it.label}
+          </NavLink>
+        ))}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: ".9rem" }}>
         {store.user && (

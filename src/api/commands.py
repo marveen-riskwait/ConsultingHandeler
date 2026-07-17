@@ -1,33 +1,145 @@
-
 import click
-from api.models import db, User
+
+from api.models import (
+    db, Organization, User, Customer, ComplianceRule,
+)
+from api.auth import hash_password
 
 """
-In this file, you can add as many commands as you want using the @app.cli.command decorator
-Flask commands are usefull to run cronjobs or tasks outside of the API but sill in integration 
-with youy database, for example: Import the price of bitcoin every night as 12am
+Flask CLI commands. The important one here is `seed-demo`, which creates a
+ready-to-explore compliance workspace: an organization, demo users, the default
+rule set (PEP / sanctions / adverse media / document expiry) and a few sample
+customers — some of which will produce screening hits.
 """
+
+
+DEFAULT_RULES = [
+    {
+        "name": "PEP detected -> EDD",
+        "event_type": "PEP_DETECTED",
+        "conditions": {},
+        "actions": [
+            {"type": "CREATE_CASE", "case_type": "PEP",
+             "title": "PEP detected — Enhanced Due Diligence",
+             "priority": "HIGH", "due_days": 5},
+            {"type": "CREATE_TASK", "task_type": "EDD_REVIEW",
+             "title": "Perform Enhanced Due Diligence",
+             "priority": "HIGH", "due_days": 5},
+            {"type": "NOTIFY", "severity": "HIGH", "requires_action": True,
+             "roles": ["COMPLIANCE_OFFICER", "ANALYST"],
+             "title": "PEP detected",
+             "message": "A politically exposed person was detected. EDD required."},
+        ],
+    },
+    {
+        "name": "Sanctions match -> investigation",
+        "event_type": "SANCTIONS_MATCH_FOUND",
+        "conditions": {},
+        "actions": [
+            {"type": "CREATE_CASE", "case_type": "SANCTIONS_MATCH",
+             "title": "Potential sanctions match",
+             "priority": "CRITICAL", "due_days": 1},
+            {"type": "CREATE_TASK", "task_type": "SANCTIONS_REVIEW",
+             "title": "Compare customer against sanctions record",
+             "priority": "CRITICAL", "due_days": 1},
+            {"type": "NOTIFY", "severity": "CRITICAL", "requires_action": True,
+             "roles": ["COMPLIANCE_OFFICER", "ANALYST"],
+             "title": "Potential sanctions match",
+             "message": "Investigate immediately — a potential match was found."},
+        ],
+    },
+    {
+        "name": "Adverse media -> review",
+        "event_type": "ADVERSE_MEDIA_DETECTED",
+        "conditions": {},
+        "actions": [
+            {"type": "CREATE_TASK", "task_type": "ADVERSE_MEDIA_REVIEW",
+             "title": "Review adverse media relevance",
+             "priority": "MEDIUM", "due_days": 7},
+            {"type": "NOTIFY", "severity": "MEDIUM", "requires_action": False,
+             "roles": ["ANALYST"],
+             "title": "Adverse media detected",
+             "message": "Adverse media found — assess relevance."},
+        ],
+    },
+    {
+        "name": "Document expiring -> renewal",
+        "event_type": "DOCUMENT_EXPIRING",
+        "conditions": {},
+        "actions": [
+            {"type": "CREATE_TASK", "task_type": "DOCUMENT_RENEWAL",
+             "title": "Request renewed document",
+             "priority": "MEDIUM", "due_days": 14},
+            {"type": "NOTIFY", "severity": "MEDIUM", "requires_action": False,
+             "roles": ["ANALYST"],
+             "title": "Document expiring",
+             "message": "A customer document is about to expire."},
+        ],
+    },
+]
+
+
+SAMPLE_CUSTOMERS = [
+    {"name": "Marie Dupont", "customer_type": "INDIVIDUAL",
+     "country": "Luxembourg", "business_activity": None},
+    {"name": "John Smith", "customer_type": "INDIVIDUAL",
+     "country": "United Kingdom", "business_activity": None},  # sanctions hit
+    {"name": "Alpha Crypto Ltd", "customer_type": "COMPANY",
+     "country": "Panama", "business_activity": "crypto exchange",
+     "complex_ownership": True},
+    {"name": "Sergei Ivanov", "customer_type": "INDIVIDUAL",
+     "country": "Russia", "business_activity": None},  # sanctions + PEP hit
+]
+
+
 def setup_commands(app):
-    
-    """ 
-    This is an example command "insert-test-users" that you can run from the command line
-    by typing: $ flask insert-test-users 5
-    Note: 5 is the number of users to add
-    """
-    @app.cli.command("insert-test-users") # name of our command
-    @click.argument("count") # argument of out command
-    def insert_test_users(count):
-        print("Creating test users")
-        for x in range(1, int(count) + 1):
-            user = User()
-            user.email = "test_user" + str(x) + "@test.com"
-            user.password = "123456"
-            user.is_active = True
-            db.session.add(user)
-            db.session.commit()
-            print("User: ", user.email, " created.")
 
-        print("All test users created")
+    @app.cli.command("seed-demo")
+    def seed_demo():
+        """Create the demo organization, users, rules and sample customers."""
+        from api.engine import risk_engine
+
+        # Rules (global, idempotent by name).
+        for spec in DEFAULT_RULES:
+            if not ComplianceRule.query.filter_by(name=spec["name"]).first():
+                db.session.add(ComplianceRule(**spec))
+        db.session.commit()
+        click.echo(f"Rules ready: {ComplianceRule.query.count()}")
+
+        org = Organization.query.filter_by(name="Acme Compliance").first()
+        if org is None:
+            org = Organization(name="Acme Compliance")
+            db.session.add(org)
+            db.session.flush()
+
+        demo_users = [
+            ("analyst@demo.io", "Alex Analyst", "ANALYST"),
+            ("officer@demo.io", "Olivia Officer", "COMPLIANCE_OFFICER"),
+            ("admin@demo.io", "Sam Admin", "ADMIN"),
+        ]
+        for email, name, role in demo_users:
+            if not User.query.filter_by(email=email).first():
+                db.session.add(User(
+                    email=email, full_name=name, role=role,
+                    password=hash_password("demo1234"),
+                    organization_id=org.id, is_active=True,
+                ))
+        db.session.commit()
+        click.echo("Demo users: analyst@demo.io / officer@demo.io / admin@demo.io "
+                   "(password: demo1234)")
+
+        for spec in SAMPLE_CUSTOMERS:
+            if Customer.query.filter_by(name=spec["name"],
+                                        organization_id=org.id).first():
+                continue
+            customer = Customer(organization_id=org.id, status="ONBOARDING", **spec)
+            db.session.add(customer)
+            db.session.flush()
+            risk_engine.recompute(customer, reason="Seed baseline")
+        db.session.commit()
+        click.echo(f"Sample customers: {Customer.query.count()}")
+        click.echo("Done. Log in and run screening on 'John Smith' or "
+                   "'Sergei Ivanov' to see the full chain fire.")
 
     @app.cli.command("insert-test-data")
     def insert_test_data():

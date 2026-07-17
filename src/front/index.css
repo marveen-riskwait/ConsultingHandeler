@@ -1,0 +1,116 @@
+:root {
+  --co-bg: #f4f5f9;
+  --co-surface: #ffffff;
+  --co-border: #e6e8f0;
+  --co-ink: #1f2430;
+  --co-muted: #6b7280;
+  --co-primary: #4f46e5;
+  --co-primary-dark: #4338ca;
+
+  --sev-critical: #dc2626;
+  --sev-high: #ea580c;
+  --sev-medium: #d97706;
+  --sev-low: #16a34a;
+  --sev-info: #2563eb;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--co-bg);
+  color: var(--co-ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+a { text-decoration: none; }
+
+/* ---- Layout ---- */
+.co-app { min-height: 100vh; }
+.co-nav {
+  background: #111827;
+  color: #fff;
+  padding: 0 1.25rem;
+  height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+.co-nav .brand { font-weight: 700; letter-spacing: .3px; color: #fff; display: flex; align-items: center; gap: .5rem; }
+.co-nav .brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--co-primary); box-shadow: 0 0 0 4px rgba(79,70,229,.25); }
+.co-nav a.navlink {
+  color: #c7cbd6;
+  padding: .4rem .75rem;
+  border-radius: 8px;
+  font-size: .92rem;
+  font-weight: 500;
+}
+.co-nav a.navlink.active, .co-nav a.navlink:hover { color: #fff; background: rgba(255,255,255,.08); }
+
+.co-container { max-width: 1080px; margin: 0 auto; padding: 1.75rem 1.25rem 4rem; }
+
+/* ---- Cards ---- */
+.co-card {
+  background: var(--co-surface);
+  border: 1px solid var(--co-border);
+  border-radius: 14px;
+  padding: 1.15rem 1.25rem;
+}
+.co-card + .co-card { margin-top: 1rem; }
+.co-card h2, .co-card h3 { margin-top: 0; }
+.section-title { font-size: .78rem; text-transform: uppercase; letter-spacing: .09em; color: var(--co-muted); font-weight: 700; margin-bottom: .35rem; }
+
+/* ---- Counters ---- */
+.co-counters { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem; }
+.co-counter { background: var(--co-surface); border: 1px solid var(--co-border); border-radius: 14px; padding: 1rem 1.1rem; }
+.co-counter .n { font-size: 1.9rem; font-weight: 800; line-height: 1; }
+.co-counter .l { color: var(--co-muted); font-size: .82rem; margin-top: .35rem; }
+.co-counter.urgent { border-left: 4px solid var(--sev-critical); }
+.co-counter.due { border-left: 4px solid var(--sev-high); }
+.co-counter.cases { border-left: 4px solid var(--sev-info); }
+.co-counter.tasks { border-left: 4px solid var(--sev-low); }
+
+/* ---- Severity / risk chips ---- */
+.chip { display: inline-flex; align-items: center; gap: .35rem; font-size: .72rem; font-weight: 700; padding: .18rem .5rem; border-radius: 999px; text-transform: uppercase; letter-spacing: .04em; }
+.chip.CRITICAL { background: #fde7e7; color: var(--sev-critical); }
+.chip.HIGH { background: #ffedd5; color: var(--sev-high); }
+.chip.MEDIUM { background: #fef3c7; color: var(--sev-medium); }
+.chip.LOW { background: #dcfce7; color: var(--sev-low); }
+.chip.INFO { background: #dbeafe; color: var(--sev-info); }
+
+.dotsev { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.dotsev.CRITICAL { background: var(--sev-critical); }
+.dotsev.HIGH { background: var(--sev-high); }
+.dotsev.MEDIUM { background: var(--sev-medium); }
+.dotsev.LOW { background: var(--sev-low); }
+.dotsev.INFO { background: var(--sev-info); }
+
+/* ---- Work inbox rows ---- */
+.work-row { display: flex; align-items: center; gap: .9rem; padding: .8rem .25rem; border-bottom: 1px solid var(--co-border); }
+.work-row:last-child { border-bottom: none; }
+.work-row .grow { flex: 1; min-width: 0; }
+.work-row .title { font-weight: 600; }
+.work-row .meta { color: var(--co-muted); font-size: .82rem; }
+
+/* ---- Risk explain ---- */
+.factor { display: flex; justify-content: space-between; padding: .35rem 0; border-bottom: 1px dashed var(--co-border); }
+.factor:last-child { border-bottom: none; }
+.factor .impact { font-weight: 700; color: var(--sev-high); }
+
+.risk-badge { font-size: 2.1rem; font-weight: 800; }
+.risk-badge small { font-size: .9rem; font-weight: 600; color: var(--co-muted); }
+
+/* ---- Timeline ---- */
+.tl-item { display: flex; gap: .7rem; padding: .5rem 0; }
+.tl-item .when { color: var(--co-muted); font-size: .78rem; min-width: 130px; }
+
+.btn-co { background: var(--co-primary); border-color: var(--co-primary); color: #fff; }
+.btn-co:hover { background: var(--co-primary-dark); border-color: var(--co-primary-dark); color: #fff; }
+
+.muted { color: var(--co-muted); }
+.empty { color: var(--co-muted); text-align: center; padding: 1.5rem; }
+.login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg,#111827,#312e81); padding: 1rem; }
+.login-card { background: #fff; border-radius: 16px; padding: 2rem; width: 100%; max-width: 400px; box-shadow: 0 20px 60px rgba(0,0,0,.3); }

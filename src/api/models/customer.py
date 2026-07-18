@@ -34,10 +34,17 @@ class Customer(db.Model):
     risk_score: Mapped[int] = mapped_column(Integer, default=0)
     risk_level: Mapped[str] = mapped_column(String(20), default="LOW")
 
+    # These three are now a DERIVED CACHE of ScreeningMatch (see engine.screening_service).
+    # They stay so the risk engine keeps reading simple booleans.
     is_pep: Mapped[bool] = mapped_column(Boolean, default=False)
     has_sanctions_match: Mapped[bool] = mapped_column(Boolean, default=False)
     has_adverse_media: Mapped[bool] = mapped_column(Boolean, default=False)
     complex_ownership: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Root node of this customer's ownership graph (a Party of kind ORGANIZATION
+    # for companies, PERSON for individuals). Plain FK, no relationship, to keep
+    # the two Customer<->Party foreign keys unambiguous.
+    root_party_id: Mapped[int] = mapped_column(ForeignKey("party.id"), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     last_review_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
@@ -61,6 +68,7 @@ class Customer(db.Model):
             "has_sanctions_match": self.has_sanctions_match,
             "has_adverse_media": self.has_adverse_media,
             "complex_ownership": self.complex_ownership,
+            "root_party_id": self.root_party_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "last_review_at": self.last_review_at.isoformat() if self.last_review_at else None,
         }

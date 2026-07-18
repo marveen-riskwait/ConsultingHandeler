@@ -6,11 +6,10 @@ blocks on an external screening call or a 50k-customer sweep.
 from datetime import timedelta
 
 from api.celery_app import celery
-from api.models import db, Customer, Document, utcnow
-from api.engine import audit
+from api.models import db, Customer, Document, User, utcnow
 from api.engine.events import emit_event
 from api.engine.rules_engine import process_event
-from api.engine.screening import get_provider
+from api.engine.screening_service import run_screening_for
 
 
 @celery.task(name="api.tasks.process_compliance_event")
@@ -21,52 +20,20 @@ def process_compliance_event(event_id):
 
 
 @celery.task(name="api.tasks.run_screening")
-def run_screening(customer_id):
+def run_screening(customer_id, requested_by_id=None):
     """Screen a customer against sanctions / PEP / adverse-media sources.
 
-    Matches flip the corresponding customer flag and emit a compliance event,
-    which the rules engine turns into cases/tasks/notifications and which the
-    risk engine folds into the score.
+    Delegates to the screening service, which records a ScreeningRun + typed
+    ScreeningMatch rows, keeps the derived flags in sync, and fires the event
+    chain (rules -> cases/tasks/notifications -> risk).
     """
     customer = Customer.query.get(customer_id)
     if customer is None:
         return {"error": "customer not found"}
 
-    matches = get_provider().screen(customer.name, customer.country)
-    audit.record("SCREENING_RUN", "customer", customer.id,
-                 new_value=f"{len(matches)} potential match(es)",
-                 reason="screening job")
-    db.session.commit()
-
-    emitted = []
-    for m in matches:
-        mtype = m["match_type"]
-        if mtype == "SANCTIONS":
-            customer.has_sanctions_match = True
-            db.session.commit()
-            emit_event("SANCTIONS_MATCH_FOUND", customer_id=customer.id,
-                       severity="CRITICAL", source=m["list"], payload=m)
-            emitted.append("SANCTIONS_MATCH_FOUND")
-        elif mtype == "PEP":
-            customer.is_pep = True
-            db.session.commit()
-            emit_event("PEP_DETECTED", customer_id=customer.id,
-                       severity="HIGH", source=m["list"], payload=m)
-            emitted.append("PEP_DETECTED")
-        elif mtype == "ADVERSE_MEDIA":
-            customer.has_adverse_media = True
-            db.session.commit()
-            emit_event("ADVERSE_MEDIA_DETECTED", customer_id=customer.id,
-                       severity="MEDIUM", source=m["list"], payload=m)
-            emitted.append("ADVERSE_MEDIA_DETECTED")
-
-    if not matches:
-        # Clean screening is itself a fact worth recording on the timeline.
-        emit_event("SCREENING_CLEARED", customer_id=customer.id,
-                   severity="INFO", source="screening",
-                   payload={"result": "no match"})
-
-    return {"customer_id": customer_id, "matches": emitted}
+    requested_by = User.query.get(requested_by_id) if requested_by_id else None
+    run, emitted = run_screening_for(customer, requested_by=requested_by)
+    return {"customer_id": customer_id, "run_id": run.id, "matches": emitted}
 
 
 @celery.task(name="api.tasks.check_document_expiry")

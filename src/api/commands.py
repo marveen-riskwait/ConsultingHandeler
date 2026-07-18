@@ -2,6 +2,7 @@ import click
 
 from api.models import (
     db, Organization, User, Customer, ComplianceRule,
+    Party, OwnershipRelationship,
 )
 from api.auth import hash_password
 
@@ -92,6 +93,42 @@ SAMPLE_CUSTOMERS = [
 ]
 
 
+def _seed_ownership(org):
+    """Build the ownership graph for Alpha Crypto Ltd:
+        John Smith --80%--> Beta Holdings --60%--> Alpha Crypto Ltd
+        Jane Doe   --40%--------------------------> Alpha Crypto Ltd
+    UBOs => John 48% (indirect), Jane 40% (direct)."""
+    alpha = Customer.query.filter_by(name="Alpha Crypto Ltd",
+                                     organization_id=org.id).first()
+    if alpha is None or alpha.root_party_id:
+        return
+
+    def party(kind, name, **kw):
+        p = Party(organization_id=org.id, kind=kind, name=name, **kw)
+        db.session.add(p)
+        db.session.flush()
+        return p
+
+    root = party("ORGANIZATION", "Alpha Crypto Ltd", customer_id=alpha.id,
+                 business_activity="crypto exchange", country_of_incorporation="Panama")
+    alpha.root_party_id = root.id
+    beta = party("ORGANIZATION", "Beta Holdings", country_of_incorporation="Luxembourg")
+    john = party("PERSON", "John Smith", nationality="United Kingdom",
+                 country_of_residence="United Kingdom")
+    jane = party("PERSON", "Jane Doe", nationality="France",
+                 country_of_residence="Luxembourg")
+
+    def edge(owner, owned, pct, rtype="SHAREHOLDER"):
+        db.session.add(OwnershipRelationship(
+            organization_id=org.id, owner_party_id=owner.id,
+            owned_party_id=owned.id, percentage=pct, relationship_type=rtype))
+
+    edge(beta, root, 60)
+    edge(john, beta, 80)
+    edge(jane, root, 40)
+    db.session.commit()
+
+
 def setup_commands(app):
 
     @app.cli.command("sync-rbac")
@@ -157,6 +194,10 @@ def setup_commands(app):
             risk_engine.recompute(customer, reason="Seed baseline")
         db.session.commit()
         click.echo(f"Sample customers: {Customer.query.count()}")
+
+        _seed_ownership(org)
+        click.echo("Ownership graph seeded for 'Alpha Crypto Ltd' "
+                   "(UBOs: John Smith 48%, Jane Doe 40%).")
         click.echo("Done. Log in and run screening on 'John Smith' or "
                    "'Sergei Ivanov' to see the full chain fire.")
 

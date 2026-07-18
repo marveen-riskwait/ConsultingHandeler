@@ -4,14 +4,48 @@ import { api } from "../services/api";
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : "—");
 
+// Map a screening-match status to a severity chip colour.
+const MATCH_SEV = {
+  CONFIRMED: "CRITICAL", ESCALATED: "HIGH",
+  POTENTIAL: "MEDIUM", UNDER_REVIEW: "MEDIUM", FALSE_POSITIVE: "LOW",
+};
+
+// Render "who owns X" as a nested tree from the ownership edges.
+const OwnershipTree = ({ nodeId, nodes, edges, factor = 1, depth = 0 }) => {
+  const node = nodes.find((n) => n.id === nodeId);
+  if (!node) return null;
+  const owners = edges.filter((e) => e.owned_party_id === nodeId);
+  return (
+    <div style={{ marginLeft: depth ? 16 : 0, paddingLeft: depth ? 10 : 0, borderLeft: depth ? "2px solid var(--co-border)" : "none" }}>
+      <div style={{ padding: ".2rem 0" }}>
+        <i className={`fa-solid ${node.kind === "PERSON" ? "fa-user" : "fa-building"}`} style={{ color: "var(--co-muted)", marginRight: 6 }} />
+        <b>{node.name}</b>
+        {node.kind === "ORGANIZATION" && node.country_of_incorporation ? (
+          <span className="muted" style={{ fontSize: ".8rem" }}> · {node.country_of_incorporation}</span>
+        ) : null}
+      </div>
+      {owners.map((e) => (
+        <div key={e.id}>
+          <div style={{ marginLeft: 16, fontSize: ".82rem", color: "var(--co-muted)" }}>
+            ▲ owns {e.percentage}% {e.relationship_type !== "SHAREHOLDER" ? `(${e.relationship_type})` : ""}
+          </div>
+          <OwnershipTree nodeId={e.owner_party_id} nodes={nodes} edges={edges} depth={depth + 1} />
+        </div>
+      ))}
+    </div>
+  );
+};
+
 export const Customer360 = () => {
   const { id } = useParams();
   const [data, setData] = useState(null);
+  const [graph, setGraph] = useState(null);
   const [error, setError] = useState(null);
   const [screening, setScreening] = useState(false);
 
   const load = useCallback(() => api.customer(id).then(setData).catch((e) => setError(e.message)), [id]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { api.ownership(id).then(setGraph).catch(() => setGraph(null)); }, [id, screening]);
 
   const runScreening = async () => {
     setScreening(true);
@@ -30,7 +64,8 @@ export const Customer360 = () => {
   if (error) return <div className="alert alert-danger">{error}</div>;
   if (!data) return <div className="empty">Loading customer…</div>;
 
-  const { customer, risk, open_cases, tasks, documents, recent_events, changes_since_review } = data;
+  const { customer, risk, open_cases, tasks, documents, recent_events,
+          changes_since_review, screening_matches = [], ubos = [] } = data;
 
   return (
     <>
@@ -143,6 +178,65 @@ export const Customer360 = () => {
                 <span style={{ fontSize: ".88rem" }}>{e.event_type.replace(/_/g, " ")}</span>
               </div>
             ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="row g-3 mt-0">
+        {/* Screening matches — first-class records with their own lifecycle */}
+        <div className="col-md-6">
+          <div className="co-card">
+            <div className="section-title">Screening matches</div>
+            {screening_matches.length === 0 && (
+              <div className="muted" style={{ fontSize: ".88rem" }}>No matches. Run screening.</div>
+            )}
+            {screening_matches.map((m) => (
+              <div className="work-row" key={m.id}>
+                <span className={`dotsev ${MATCH_SEV[m.status] || "INFO"}`} />
+                <div className="grow">
+                  <div className="title">{m.match_type.replace(/_/g, " ")} · {m.matched_name}</div>
+                  <div className="meta">
+                    {m.source} · score {m.match_score}%
+                    {m.decision_reason ? ` · ${m.decision_reason}` : ""}
+                  </div>
+                </div>
+                <span className={`chip ${MATCH_SEV[m.status] || "INFO"}`}>{m.status.replace(/_/g, " ")}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Ownership & UBOs */}
+        <div className="col-md-6">
+          <div className="co-card">
+            <div className="section-title">Ownership &amp; UBOs</div>
+            {ubos.length === 0 && (
+              <div className="muted" style={{ fontSize: ".88rem" }}>
+                No ownership structure recorded.
+              </div>
+            )}
+            {ubos.length > 0 && (
+              <div style={{ marginBottom: ".6rem" }}>
+                {ubos.map((u) => (
+                  <div className="work-row" key={u.party.id}>
+                    <span className={`dotsev ${u.is_ubo ? "HIGH" : "INFO"}`} />
+                    <div className="grow">
+                      <div className="title">{u.party.name}</div>
+                      <div className="meta">{u.party.nationality || "—"}{u.via_control ? " · control" : ""}</div>
+                    </div>
+                    <span className={`chip ${u.is_ubo ? "HIGH" : "INFO"}`}>
+                      {u.effective_ownership}%{u.is_ubo ? " · UBO" : ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {graph && graph.graph && graph.graph.root_id && (
+              <div style={{ fontSize: ".9rem", marginTop: ".4rem" }}>
+                <div className="muted" style={{ fontSize: ".78rem", marginBottom: ".2rem" }}>Structure</div>
+                <OwnershipTree nodeId={graph.graph.root_id} nodes={graph.graph.nodes} edges={graph.graph.edges} />
+              </div>
+            )}
           </div>
         </div>
       </div>

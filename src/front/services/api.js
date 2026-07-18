@@ -39,6 +39,10 @@ export const api = {
   screen: (id) => request(`/customers/${id}/screen`, { method: "POST" }),
   addDocument: (id, payload) => request(`/customers/${id}/documents`, { method: "POST", body: payload }),
   timeline: (id) => request(`/customers/${id}/timeline`),
+  ownership: (id) => request(`/customers/${id}/ownership`),
+  screening: (id) => request(`/customers/${id}/screening`),
+  reviewMatch: (matchId, decision, reason) =>
+    request(`/screening/matches/${matchId}/review`, { method: "POST", body: { decision, reason } }),
 
   // workspace / work
   workspace: () => request("/workspace"),

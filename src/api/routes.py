@@ -13,14 +13,16 @@ from flask_cors import CORS
 from api.models import (
     db, Organization, User, Role, Permission, Customer, Document, RiskAssessment,
     ComplianceEvent, ComplianceRule, Case, Task, Notification, AuditEvent,
-    utcnow, ROLES, CUSTOMER_TYPES, PERMISSION_CATALOG,
+    Party, OwnershipRelationship, ScreeningRun, ScreeningMatch,
+    utcnow, ROLES, CUSTOMER_TYPES, PARTY_KINDS, PERMISSION_CATALOG,
 )
 from api.utils import APIException
 from api.auth import (
     hash_password, verify_password, make_token, current_user,
     login_required, role_required, permission_required, has_permission,
 )
-from api.engine import risk_engine, audit
+from api.engine import risk_engine, audit, ownership
+from api.engine.screening_service import review_match
 from api.tasks import run_screening
 
 api = Blueprint("api", __name__)
@@ -176,12 +178,18 @@ def customer_overview(user, cid):
                .filter(ComplianceEvent.event_type != "SCREENING_CLEARED")
                .order_by(ComplianceEvent.detected_at.desc()).all())
 
+    matches = (ScreeningMatch.query.filter_by(customer_id=cid)
+               .order_by(ScreeningMatch.first_detected_at.desc()).all())
+    ubos = ownership.compute_ubos(customer)
+
     return jsonify({
         "customer": customer.serialize(),
         "risk": latest.serialize() if latest else None,
         "open_cases": [c.serialize() for c in open_cases],
         "tasks": [t.serialize() for t in tasks],
         "documents": [d.serialize() for d in documents],
+        "screening_matches": [m.serialize() for m in matches],
+        "ubos": ubos,
         "recent_events": [e.serialize() for e in events],
         "changes_since_review": [e.serialize() for e in changes],
         "last_review_at": since.isoformat() if since else None,
@@ -194,7 +202,7 @@ def screen_customer(user, cid):
     customer = _get_customer_for(user, cid)
     audit.record("SCREENING_REQUESTED", "customer", customer.id, actor=user,
                  reason="Manual screening", commit=True)
-    _dispatch(run_screening, customer.id)
+    _dispatch(run_screening, customer.id, user.id)
     return jsonify({
         "message": "Screening started",
         "async": _celery_enabled(),
@@ -243,6 +251,116 @@ def customer_timeline(user, cid):
     for it in items:
         it["at"] = it["at"].isoformat() if it["at"] else None
     return jsonify(items), 200
+
+
+# ---------------------------------------------------------------------------
+# Ownership / KYB — parties, graph & UBOs
+# ---------------------------------------------------------------------------
+def _ensure_root_party(customer):
+    if customer.root_party_id:
+        return Party.query.get(customer.root_party_id)
+    kind = "ORGANIZATION" if customer.customer_type == "COMPANY" else "PERSON"
+    party = Party(
+        organization_id=customer.organization_id,
+        kind=kind, name=customer.name, customer_id=customer.id,
+        business_activity=customer.business_activity,
+        country_of_incorporation=customer.country if kind == "ORGANIZATION" else None,
+        country_of_residence=customer.country if kind == "PERSON" else None,
+    )
+    db.session.add(party)
+    db.session.flush()
+    customer.root_party_id = party.id
+    db.session.commit()
+    return party
+
+
+@api.route("/customers/<int:cid>/ownership", methods=["GET"])
+@permission_required("customer.view")
+def customer_ownership(user, cid):
+    customer = _get_customer_for(user, cid)
+    graph = ownership.build_graph(customer)
+    ubos = ownership.compute_ubos(customer)
+    return jsonify({"graph": graph, "ubos": ubos,
+                    "root_party_id": customer.root_party_id}), 200
+
+
+@api.route("/customers/<int:cid>/ownership", methods=["POST"])
+@permission_required("kyb.edit")
+def add_ownership(user, cid):
+    customer = _get_customer_for(user, cid)
+    body = request.get_json(silent=True) or {}
+    owner_name = (body.get("owner_name") or "").strip()
+    if not owner_name:
+        raise APIException("owner_name is required", status_code=400)
+    kind = body.get("owner_kind", "PERSON")
+    if kind not in PARTY_KINDS:
+        kind = "PERSON"
+
+    root = _ensure_root_party(customer)
+    # The edge points at the owned party: the root by default, or another party.
+    owned_id = body.get("owned_party_id") or root.id
+
+    owner = Party(
+        organization_id=customer.organization_id,
+        kind=kind, name=owner_name,
+        nationality=body.get("nationality"),
+        country_of_residence=body.get("country") if kind == "PERSON" else None,
+        country_of_incorporation=body.get("country") if kind == "ORGANIZATION" else None,
+    )
+    db.session.add(owner)
+    db.session.flush()
+
+    edge = OwnershipRelationship(
+        organization_id=customer.organization_id,
+        owner_party_id=owner.id,
+        owned_party_id=owned_id,
+        relationship_type=body.get("relationship_type", "SHAREHOLDER"),
+        percentage=float(body.get("percentage") or 0),
+        control_type=body.get("control_type"),
+    )
+    db.session.add(edge)
+    audit.record("OWNERSHIP_ADDED", "customer", customer.id, actor=user,
+                 new_value=f"{owner_name} -> {edge.percentage}%",
+                 reason="KYB", commit=True)
+    return jsonify({"owner": owner.serialize(), "edge": edge.serialize()}), 201
+
+
+# ---------------------------------------------------------------------------
+# Screening runs & match review
+# ---------------------------------------------------------------------------
+@api.route("/customers/<int:cid>/screening", methods=["GET"])
+@permission_required("customer.view")
+def customer_screening(user, cid):
+    customer = _get_customer_for(user, cid)
+    runs = (ScreeningRun.query.filter_by(customer_id=cid)
+            .order_by(ScreeningRun.started_at.desc()).all())
+    matches = (ScreeningMatch.query.filter_by(customer_id=cid)
+               .order_by(ScreeningMatch.first_detected_at.desc()).all())
+    return jsonify({
+        "runs": [r.serialize() for r in runs],
+        "matches": [m.serialize() for m in matches],
+    }), 200
+
+
+@api.route("/screening/matches/<int:match_id>/review", methods=["POST"])
+@permission_required("screening.review")
+def review_screening_match(user, match_id):
+    match = ScreeningMatch.query.get(match_id)
+    if match is None:
+        raise APIException("Match not found", status_code=404)
+    _get_customer_for(user, match.customer_id)  # org scoping
+    body = request.get_json(silent=True) or {}
+    decision = body.get("decision")
+    reason = (body.get("reason") or "").strip()
+    if decision not in ("FALSE_POSITIVE", "CONFIRMED", "ESCALATED"):
+        raise APIException("decision must be FALSE_POSITIVE, CONFIRMED or ESCALATED",
+                           status_code=400)
+    if not reason:
+        raise APIException("A reason is required", status_code=400)
+    if decision == "CONFIRMED" and not has_permission(user, "screening.confirm"):
+        raise APIException("Missing permission: screening.confirm", status_code=403)
+    review_match(match, decision, reason, user)
+    return jsonify(match.serialize()), 200
 
 
 # ---------------------------------------------------------------------------
@@ -382,20 +500,23 @@ def decide_case(user, case_id):
     case.decision_reason = reason
     case.decided_by = user.id
 
+    # Carry the decision onto the linked screening match(es). review_match keeps
+    # the match's history AND re-syncs the customer's derived flags + risk, so a
+    # false positive no longer erases the fact the match ever existed.
+    match_status = {
+        "FALSE_POSITIVE": "FALSE_POSITIVE", "CLEARED": "FALSE_POSITIVE",
+        "CONFIRMED_MATCH": "CONFIRMED", "ESCALATE": "ESCALATED",
+    }[decision]
+    linked = ScreeningMatch.query.filter_by(case_id=case.id).all()
+    for m in linked:
+        review_match(m, match_status, reason, user)
+
     if decision == "ESCALATE":
         case.status = "ESCALATED"
         case.priority = "CRITICAL"
     else:
         case.status = "CLOSED"
         case.closed_at = utcnow()
-        # Clearing a false positive removes the signal that drove the case.
-        if decision in ("FALSE_POSITIVE", "CLEARED"):
-            if case.case_type in ("SANCTIONS_MATCH", "SANCTIONS_MATCH_FOUND"):
-                customer.has_sanctions_match = False
-            elif case.case_type in ("PEP", "PEP_DETECTED"):
-                customer.is_pep = False
-            elif case.case_type in ("ADVERSE_MEDIA", "ADVERSE_MEDIA_DETECTED"):
-                customer.has_adverse_media = False
         for t in case.tasks:
             if t.status != "DONE":
                 t.status = "DONE"
@@ -405,8 +526,9 @@ def decide_case(user, case_id):
                  old_value=old_status, new_value=decision, reason=reason)
     db.session.commit()
 
-    # Decisions can change the risk picture (e.g. a false positive lowers it).
-    risk_engine.recompute(customer, actor=user, reason=f"Case decision: {decision}")
+    # If no match was linked, still refresh the risk picture.
+    if not linked:
+        risk_engine.recompute(customer, actor=user, reason=f"Case decision: {decision}")
     return jsonify(case.serialize(with_tasks=True)), 200
 
 

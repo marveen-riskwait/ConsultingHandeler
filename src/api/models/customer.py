@@ -44,7 +44,13 @@ class Customer(db.Model):
     # Root node of this customer's ownership graph (a Party of kind ORGANIZATION
     # for companies, PERSON for individuals). Plain FK, no relationship, to keep
     # the two Customer<->Party foreign keys unambiguous.
-    root_party_id: Mapped[int] = mapped_column(ForeignKey("party.id"), nullable=True)
+    # use_alter breaks the customer<->party DDL cycle (Party.customer_id points
+    # back here): the constraint is added AFTER both tables exist, which is
+    # required on PostgreSQL and for fresh-schema generation. The explicit name
+    # matches migration 1bd1523c74a8.
+    root_party_id: Mapped[int] = mapped_column(
+        ForeignKey("party.id", use_alter=True, name="fk_customer_root_party"),
+        nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     last_review_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)

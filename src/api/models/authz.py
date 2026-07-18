@@ -1,71 +1,107 @@
-"""RBAC: Role, Permission and their association.
+"""RBAC: Role, Permission, their association, and the UserRole join.
 
-The shift from the v1 static roles is: a Role is now a bag of Permissions, and
-every protected action checks a *permission code* — not a role name. This lets
-us add roles (SENIOR_ANALYST, MLRO, REGULATORY_MANAGER, ...) and tune what each
-can do without touching route code.
-
-The catalog and the default role -> permission mapping live here so both the
-seed command and any future admin UI read from one place.
+Permission codes are the canonical vocabulary from the instruction document.
+Authorization checks a *permission code*, never a role name, so roles can be
+added/tuned without touching route code. A user may hold MULTIPLE roles
+(user_roles) in addition to the legacy single role_id; permissions are the union.
 """
-from sqlalchemy import String, Boolean, Integer, ForeignKey, Table, Column
+from sqlalchemy import String, Boolean, ForeignKey, Table, Column
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from api.models.base import db
 
 
-# --- Catalog of every permission the platform understands -------------------
-# (code, human label). Grouped by domain for readability.
+# --- Canonical permission catalog (code, human label) -----------------------
 PERMISSION_CATALOG = [
     ("workspace.view", "View own workspace"),
+
+    ("organization.view", "View organization"),
+    ("organization.update", "Update organization"),
+
+    ("user.view", "View users"),
+    ("user.create", "Create users / invite"),
+    ("user.update", "Update users"),
+    ("user.disable", "Disable users"),
+
+    ("role.view", "View roles"),
+    ("role.create", "Create roles"),
+    ("role.update", "Update roles"),
+
+    ("department.view", "View departments"),
+    ("department.create", "Create departments"),
+    ("department.update", "Update departments"),
+
+    ("team.view", "View teams"),
+    ("team.create", "Create teams"),
+    ("team.update", "Update teams"),
+    ("team.manage_members", "Manage team members"),
+
     ("customer.view", "View customers"),
     ("customer.create", "Create customers"),
     ("customer.update", "Update customers"),
-    ("customer.delete", "Delete customers"),
-    ("kyc.view", "View KYC data"),
-    ("kyc.edit", "Edit KYC data"),
+
+    ("kyc.view", "View KYC"),
+    ("kyc.edit", "Edit KYC"),
+    ("kyc.review", "Review KYC"),
     ("kyc.approve", "Approve KYC"),
-    ("kyb.view", "View KYB data"),
-    ("kyb.edit", "Edit KYB data"),
+
+    ("kyb.view", "View KYB"),
+    ("kyb.edit", "Edit KYB"),
+    ("kyb.review", "Review KYB"),
+
     ("screening.run", "Run screening"),
-    ("screening.review", "Review screening matches"),
-    ("screening.confirm", "Confirm a screening match"),
+    ("screening.view", "View screening"),
+    ("screening.review_match", "Review a screening match"),
+    ("screening.confirm_match", "Confirm a screening match"),
+
     ("risk.view", "View risk"),
     ("risk.calculate", "Recalculate risk"),
     ("risk.override", "Override risk"),
+    ("risk.approve", "Approve risk"),
+
     ("case.view", "View cases"),
     ("case.create", "Create cases"),
     ("case.assign", "Assign cases"),
+    ("case.reassign", "Reassign cases"),
     ("case.escalate", "Escalate cases"),
+    ("case.update", "Update cases"),
     ("case.close", "Close cases"),
+    ("case.approve", "Approve cases"),
+
     ("task.view", "View tasks"),
     ("task.create", "Create tasks"),
     ("task.assign", "Assign tasks"),
     ("task.complete", "Complete tasks"),
+
     ("document.view", "View documents"),
     ("document.upload", "Upload documents"),
     ("document.verify", "Verify documents"),
     ("document.delete", "Delete documents"),
+
     ("workflow.view", "View workflows"),
     ("workflow.execute", "Execute workflows"),
     ("workflow.configure", "Configure workflows"),
-    ("rules.view", "View rules"),
-    ("rules.create", "Create rules"),
-    ("rules.edit", "Edit rules"),
-    ("rules.activate", "Activate rules"),
-    ("audit.view", "View audit trail"),
+
+    ("rule.view", "View rules"),
+    ("rule.create", "Create rules"),
+    ("rule.update", "Update rules"),
+    ("rule.activate", "Activate rules"),
+
     ("regulatory.view", "View regulatory intelligence"),
     ("regulatory.manage", "Manage regulatory intelligence"),
-    ("organization.manage", "Manage organization"),
-    ("users.manage", "Manage users"),
-    ("roles.manage", "Manage roles & permissions"),
+
+    ("audit.view", "View audit trail"),
+
+    ("management.view", "View management dashboard"),
+    ("management.team_view", "View teams / members"),
+    ("management.performance_view", "View performance / SLA"),
+    ("management.assign_work", "Assign / reassign work"),
 ]
 
 ALL_CODES = [c for c, _ in PERMISSION_CATALOG]
 
 
 def _codes(*groups):
-    """Flatten helper for readable role definitions."""
     out = []
     for g in groups:
         out.extend(g)
@@ -75,73 +111,87 @@ def _codes(*groups):
 _ANALYST_BASE = [
     "workspace.view",
     "customer.view", "customer.create", "customer.update",
-    "kyc.view", "kyc.edit", "kyb.view",
-    "screening.run", "screening.review",
+    "kyc.view", "kyc.edit", "kyc.review",
+    "kyb.view",
+    "screening.run", "screening.view", "screening.review_match",
     "risk.view", "risk.calculate",
-    "case.view", "case.create",
+    "case.view", "case.create", "case.update",
     "task.view", "task.create", "task.complete",
     "document.view", "document.upload",
-    "workflow.view", "rules.view",
+    "workflow.view", "rule.view",
 ]
 
-# System roles shipped by default. name -> list of permission codes.
+_MANAGER_EXTRA = [
+    "team.view", "management.view", "management.team_view",
+    "management.performance_view", "management.assign_work",
+    "case.assign", "case.reassign", "case.escalate",
+    "task.assign", "workflow.configure", "audit.view", "user.view",
+]
+
+_ADMIN_CORE = [
+    "workspace.view",
+    "organization.view", "organization.update",
+    "user.view", "user.create", "user.update", "user.disable",
+    "role.view", "role.create", "role.update",
+    "department.view", "department.create", "department.update",
+    "team.view", "team.create", "team.update", "team.manage_members",
+    "customer.view",
+    "workflow.view", "workflow.configure",
+    "rule.view", "rule.create", "rule.update", "rule.activate",
+    "regulatory.view",
+    "audit.view",
+    "management.view", "management.team_view",
+    "management.performance_view", "management.assign_work",
+]
+
+# name -> permission codes. Technical admins deliberately lack compliance
+# decision permissions (screening.confirm_match / risk.override / kyc.approve /
+# risk.approve / case.approve): technical admin != compliance decision maker.
 DEFAULT_ROLE_PERMISSIONS = {
-    "CUSTOMER_USER": [
-        "workspace.view", "document.upload", "kyc.view",
-    ],
+    "CUSTOMER_USER": ["workspace.view", "document.upload", "kyc.view"],
+
     "KYC_ANALYST": _ANALYST_BASE,
-    # Back-compat alias for the v1 demo users.
-    "ANALYST": _ANALYST_BASE,
+    "ANALYST": _ANALYST_BASE,  # back-compat alias
+
     "SENIOR_ANALYST": _codes(_ANALYST_BASE, [
-        "case.assign", "task.assign", "kyc.approve",
+        "case.assign", "case.reassign", "task.assign", "kyc.approve",
+        "kyb.review", "screening.confirm_match",
     ]),
+
     "COMPLIANCE_OFFICER": _codes(_ANALYST_BASE, [
-        "screening.confirm", "kyc.approve", "kyb.edit",
-        "risk.override", "case.assign", "case.escalate", "case.close",
+        "screening.confirm_match", "kyc.approve", "kyb.edit", "kyb.review",
+        "risk.override", "risk.approve",
+        "case.assign", "case.escalate", "case.close", "case.approve",
         "document.verify", "audit.view",
     ]),
-    "COMPLIANCE_MANAGER": _codes(_ANALYST_BASE, [
-        "case.assign", "task.assign", "case.escalate",
-        "workflow.configure", "rules.view", "audit.view",
-    ]),
-    "MANAGER": _codes(_ANALYST_BASE, [
-        "case.assign", "task.assign", "workflow.configure", "audit.view",
-    ]),
+
+    "COMPLIANCE_MANAGER": _codes(_ANALYST_BASE, _MANAGER_EXTRA),
+    "MANAGER": _codes(_ANALYST_BASE, _MANAGER_EXTRA),  # back-compat alias
+
     "MLRO": _codes(_ANALYST_BASE, [
-        "screening.confirm", "risk.override", "case.escalate", "case.close",
+        "screening.confirm_match", "risk.override", "risk.approve",
+        "case.escalate", "case.close", "case.approve",
         "audit.view", "regulatory.view",
     ]),
+
     "AUDITOR": [
         "workspace.view", "customer.view", "kyc.view", "kyb.view",
-        "screening.review", "risk.view", "case.view", "task.view",
-        "document.view", "workflow.view", "rules.view", "audit.view",
-        "regulatory.view",
+        "screening.view", "risk.view", "case.view", "task.view",
+        "document.view", "workflow.view", "rule.view", "audit.view",
+        "regulatory.view", "management.view", "management.team_view",
+        "management.performance_view",
     ],
+
     "REGULATORY_MANAGER": [
         "workspace.view", "regulatory.view", "regulatory.manage",
-        "rules.view", "rules.create", "rules.edit", "rules.activate",
+        "rule.view", "rule.create", "rule.update", "rule.activate",
         "audit.view", "customer.view",
     ],
-    # Technical admin != compliance decision maker: no screening.confirm,
-    # risk.override or kyc.approve here on purpose.
-    "PLATFORM_ADMIN": [
-        "workspace.view",
-        "customer.view", "customer.create", "customer.update", "customer.delete",
-        "kyc.view", "kyb.view",
-        "screening.run", "screening.review",
-        "risk.view", "risk.calculate",
-        "case.view", "case.create", "case.assign",
-        "task.view", "task.create", "task.assign",
-        "document.view", "document.upload", "document.delete",
-        "workflow.view", "workflow.configure",
-        "rules.view", "rules.create", "rules.edit", "rules.activate",
-        "audit.view", "regulatory.view", "regulatory.manage",
-        "organization.manage", "users.manage", "roles.manage",
-    ],
-    # Back-compat alias for the v1 demo admin user.
-    "ADMIN": None,  # filled below = PLATFORM_ADMIN
+
+    "ORGANIZATION_ADMIN": _ADMIN_CORE,
+    "PLATFORM_ADMIN": _ADMIN_CORE,
+    "ADMIN": _ADMIN_CORE,  # back-compat alias
 }
-DEFAULT_ROLE_PERMISSIONS["ADMIN"] = DEFAULT_ROLE_PERMISSIONS["PLATFORM_ADMIN"]
 
 
 role_permissions = Table(
@@ -149,6 +199,14 @@ role_permissions = Table(
     db.metadata,
     Column("role_id", ForeignKey("role.id"), primary_key=True),
     Column("permission_id", ForeignKey("permission.id"), primary_key=True),
+)
+
+# A user may hold several roles (in addition to the legacy single role_id).
+user_roles = Table(
+    "user_roles",
+    db.metadata,
+    Column("user_id", ForeignKey("user.id"), primary_key=True),
+    Column("role_id", ForeignKey("role.id"), primary_key=True),
 )
 
 

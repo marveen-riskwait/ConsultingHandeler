@@ -3,6 +3,7 @@ import click
 from api.models import (
     db, Organization, User, Customer, ComplianceRule,
     Party, OwnershipRelationship,
+    Department, Team, OrganizationMembership, TeamMembership,
 )
 from api.auth import hash_password
 
@@ -93,6 +94,43 @@ SAMPLE_CUSTOMERS = [
 ]
 
 
+def _seed_org_structure(org):
+    """Departments, Teams, memberships for the demo org (idempotent)."""
+    # Organization membership for every user.
+    for u in User.query.filter_by(organization_id=org.id).all():
+        if not OrganizationMembership.query.filter_by(
+                organization_id=org.id, user_id=u.id).first():
+            db.session.add(OrganizationMembership(
+                organization_id=org.id, user_id=u.id, status="ACTIVE"))
+
+    dept = Department.query.filter_by(name="Compliance Department",
+                                      organization_id=org.id).first()
+    if dept is None:
+        dept = Department(organization_id=org.id, name="Compliance Department")
+        db.session.add(dept)
+        db.session.flush()
+
+    manager = User.query.filter_by(email="manager@demo.io").first()
+    team = Team.query.filter_by(name="KYC Team", organization_id=org.id).first()
+    if team is None:
+        team = Team(organization_id=org.id, department_id=dept.id, name="KYC Team",
+                    manager_id=manager.id if manager else None)
+        db.session.add(team)
+        db.session.flush()
+
+    members = [
+        ("analyst@demo.io", "MEMBER"),
+        ("officer@demo.io", "MEMBER"),
+        ("manager@demo.io", "MANAGER"),
+    ]
+    for email, role_in_team in members:
+        u = User.query.filter_by(email=email).first()
+        if u and not TeamMembership.query.filter_by(team_id=team.id, user_id=u.id).first():
+            db.session.add(TeamMembership(team_id=team.id, user_id=u.id,
+                                          role_in_team=role_in_team))
+    db.session.commit()
+
+
 def _seed_ownership(org):
     """Build the ownership graph for Alpha Crypto Ltd:
         John Smith --80%--> Beta Holdings --60%--> Alpha Crypto Ltd
@@ -164,7 +202,8 @@ def setup_commands(app):
         demo_users = [
             ("analyst@demo.io", "Alex Analyst", "KYC_ANALYST"),
             ("officer@demo.io", "Olivia Officer", "COMPLIANCE_OFFICER"),
-            ("admin@demo.io", "Sam Admin", "PLATFORM_ADMIN"),
+            ("manager@demo.io", "Mia Manager", "COMPLIANCE_MANAGER"),
+            ("admin@demo.io", "Sam Admin", "ORGANIZATION_ADMIN"),
         ]
         for email, name, role_name in demo_users:
             role = get_role(role_name)
@@ -181,7 +220,8 @@ def setup_commands(app):
                     organization_id=org.id, is_active=True,
                 ))
         db.session.commit()
-        click.echo("Demo users: analyst@demo.io / officer@demo.io / admin@demo.io "
+        _seed_org_structure(org)
+        click.echo("Demo users: analyst@ / officer@ / manager@ / admin@demo.io "
                    "(password: demo1234)")
 
         for spec in SAMPLE_CUSTOMERS:

@@ -14,6 +14,7 @@ from api.models import (
     db, Organization, User, Role, Permission, Customer, Document, RiskAssessment,
     ComplianceEvent, ComplianceRule, Case, Task, Notification, AuditEvent,
     Party, OwnershipRelationship, ScreeningRun, ScreeningMatch,
+    Department, Team, OrganizationMembership, TeamMembership, AccessPolicy,
     utcnow, ROLES, CUSTOMER_TYPES, PARTY_KINDS, PERMISSION_CATALOG,
 )
 from api.utils import APIException
@@ -21,7 +22,7 @@ from api.auth import (
     hash_password, verify_password, make_token, current_user,
     login_required, role_required, permission_required, has_permission,
 )
-from api.engine import risk_engine, audit, ownership
+from api.engine import risk_engine, audit, ownership, data_scope
 from api.engine.screening_service import review_match
 from api.tasks import run_screening
 
@@ -78,7 +79,7 @@ def register():
         db.session.add(org)
         db.session.flush()
     if is_new_org:
-        role_name = "PLATFORM_ADMIN"
+        role_name = "ORGANIZATION_ADMIN"
 
     from api.rbac import get_role
     role = get_role(role_name)
@@ -92,6 +93,9 @@ def register():
         organization_id=org.id,
     )
     db.session.add(user)
+    db.session.flush()
+    db.session.add(OrganizationMembership(
+        organization_id=org.id, user_id=user.id, status="ACTIVE"))
     db.session.commit()
     return jsonify({"token": make_token(user), "user": user.serialize()}), 201
 
@@ -110,8 +114,15 @@ def login():
 @api.route("/auth/me", methods=["GET"])
 @login_required
 def me(user):
-    return jsonify({"user": user.serialize(),
-                    "organization": user.organization.serialize()}), 200
+    team_ids = data_scope.user_team_ids(user)
+    teams = Team.query.filter(Team.id.in_(team_ids or [0])).all()
+    return jsonify({
+        "user": user.serialize(),
+        "organization": user.organization.serialize(),
+        "teams": [t.serialize() for t in teams],
+        "data_scope": {"case": data_scope.resolve_scope(user, "case"),
+                       "customer": data_scope.resolve_scope(user, "customer")},
+    }), 200
 
 
 # ---------------------------------------------------------------------------
@@ -343,7 +354,7 @@ def customer_screening(user, cid):
 
 
 @api.route("/screening/matches/<int:match_id>/review", methods=["POST"])
-@permission_required("screening.review")
+@permission_required("screening.review_match")
 def review_screening_match(user, match_id):
     match = ScreeningMatch.query.get(match_id)
     if match is None:
@@ -357,8 +368,8 @@ def review_screening_match(user, match_id):
                            status_code=400)
     if not reason:
         raise APIException("A reason is required", status_code=400)
-    if decision == "CONFIRMED" and not has_permission(user, "screening.confirm"):
-        raise APIException("Missing permission: screening.confirm", status_code=403)
+    if decision == "CONFIRMED" and not has_permission(user, "screening.confirm_match"):
+        raise APIException("Missing permission: screening.confirm_match", status_code=403)
     review_match(match, decision, reason, user)
     return jsonify(match.serialize()), 200
 
@@ -369,14 +380,11 @@ def review_screening_match(user, match_id):
 @api.route("/workspace", methods=["GET"])
 @permission_required("workspace.view")
 def workspace(user):
-    org_id = user.organization_id
-    org_customer_ids = [c.id for c in Customer.query
-                        .filter_by(organization_id=org_id).all()]
-
-    open_cases = (Case.query.filter(Case.customer_id.in_(org_customer_ids or [0]))
+    # ABAC: the workspace only counts work the user is allowed to see.
+    open_cases = (data_scope.visible_cases(user)
                   .filter(Case.status != "CLOSED").all())
     urgent = [c for c in open_cases if c.priority in ("CRITICAL", "HIGH")]
-    open_tasks = (Task.query.filter(Task.customer_id.in_(org_customer_ids or [0]))
+    open_tasks = (data_scope.visible_tasks(user)
                   .filter(Task.status != "DONE").all())
     now = utcnow()
     due_today = [t for t in open_tasks
@@ -427,9 +435,7 @@ def workspace(user):
 @api.route("/cases", methods=["GET"])
 @permission_required("case.view")
 def list_cases(user):
-    org_customer_ids = [c.id for c in Customer.query
-                        .filter_by(organization_id=user.organization_id).all()]
-    q = Case.query.filter(Case.customer_id.in_(org_customer_ids or [0]))
+    q = data_scope.visible_cases(user)   # ABAC: tenant + role/policy scope
     status = request.args.get("status")
     if status:
         q = q.filter(Case.status == status)
@@ -487,10 +493,10 @@ def decide_case(user, case_id):
 
     # Authorization is now permission-based, not role-name based.
     required_perm = {
-        "CONFIRMED_MATCH": "screening.confirm",
+        "CONFIRMED_MATCH": "screening.confirm_match",
         "ESCALATE": "case.escalate",
-        "FALSE_POSITIVE": "screening.review",
-        "CLEARED": "screening.review",
+        "FALSE_POSITIVE": "screening.review_match",
+        "CLEARED": "screening.review_match",
     }[decision]
     if not has_permission(user, required_perm):
         raise APIException(f"Missing permission: {required_perm}", status_code=403)
@@ -535,9 +541,7 @@ def decide_case(user, case_id):
 @api.route("/tasks/my-work", methods=["GET"])
 @permission_required("task.view")
 def my_work(user):
-    org_customer_ids = [c.id for c in Customer.query
-                        .filter_by(organization_id=user.organization_id).all()]
-    tasks = (Task.query.filter(Task.customer_id.in_(org_customer_ids or [0]))
+    tasks = (data_scope.visible_tasks(user)
              .filter(Task.status != "DONE")
              .order_by(Task.due_at.asc()).all())
     return jsonify([t.serialize() for t in tasks]), 200
@@ -583,7 +587,7 @@ def read_notification(user, note_id):
 # Rules & Audit (read-only, for transparency)
 # ---------------------------------------------------------------------------
 @api.route("/rules", methods=["GET"])
-@permission_required("rules.view")
+@permission_required("rule.view")
 def list_rules(user):
     rules = ComplianceRule.query.order_by(ComplianceRule.event_type).all()
     return jsonify([r.serialize() for r in rules]), 200
@@ -607,16 +611,110 @@ def list_audit(user):
 # RBAC (admin) — roles & permission catalog
 # ---------------------------------------------------------------------------
 @api.route("/roles", methods=["GET"])
-@permission_required("roles.manage")
+@permission_required("role.view")
 def list_roles(user):
     roles = Role.query.order_by(Role.name).all()
     return jsonify([r.serialize(with_permissions=True) for r in roles]), 200
 
 
 @api.route("/permissions", methods=["GET"])
-@permission_required("roles.manage")
+@permission_required("role.view")
 def list_permissions(user):
     return jsonify([{"code": c, "label": label} for c, label in PERMISSION_CATALOG]), 200
+
+
+# ---------------------------------------------------------------------------
+# Organization structure (admin foundation) — departments, teams, users
+# ---------------------------------------------------------------------------
+@api.route("/organization", methods=["GET"])
+@permission_required("organization.view")
+def get_organization(user):
+    org = user.organization
+    depts = Department.query.filter_by(organization_id=org.id).all()
+    teams = Team.query.filter_by(organization_id=org.id).all()
+    members = OrganizationMembership.query.filter_by(organization_id=org.id).all()
+    return jsonify({
+        "organization": org.serialize(),
+        "departments": [d.serialize() for d in depts],
+        "teams": [t.serialize(with_members=True) for t in teams],
+        "member_count": len(members),
+    }), 200
+
+
+@api.route("/departments", methods=["GET"])
+@permission_required("department.view")
+def list_departments(user):
+    depts = Department.query.filter_by(organization_id=user.organization_id).all()
+    return jsonify([d.serialize() for d in depts]), 200
+
+
+@api.route("/departments", methods=["POST"])
+@permission_required("department.create")
+def create_department(user):
+    body = request.get_json(silent=True) or {}
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise APIException("name is required", status_code=400)
+    dept = Department(organization_id=user.organization_id, name=name)
+    db.session.add(dept)
+    audit.record("DEPARTMENT_CREATED", "department", None, actor=user,
+                 new_value=name, commit=True)
+    return jsonify(dept.serialize()), 201
+
+
+@api.route("/teams", methods=["GET"])
+@permission_required("team.view")
+def list_teams(user):
+    teams = Team.query.filter_by(organization_id=user.organization_id).all()
+    return jsonify([t.serialize(with_members=True) for t in teams]), 200
+
+
+@api.route("/teams", methods=["POST"])
+@permission_required("team.create")
+def create_team(user):
+    body = request.get_json(silent=True) or {}
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise APIException("name is required", status_code=400)
+    team = Team(organization_id=user.organization_id, name=name,
+                department_id=body.get("department_id"),
+                manager_id=body.get("manager_id"))
+    db.session.add(team)
+    audit.record("TEAM_CREATED", "team", None, actor=user, new_value=name,
+                 commit=True)
+    return jsonify(team.serialize()), 201
+
+
+@api.route("/teams/<int:team_id>/members", methods=["POST"])
+@permission_required("team.manage_members")
+def add_team_member(user, team_id):
+    team = Team.query.get(team_id)
+    if team is None or team.organization_id != user.organization_id:
+        raise APIException("Team not found", status_code=404)
+    body = request.get_json(silent=True) or {}
+    member = User.query.get(body.get("user_id"))
+    if member is None or member.organization_id != user.organization_id:
+        raise APIException("User not found in organization", status_code=404)
+    if TeamMembership.query.filter_by(team_id=team_id, user_id=member.id).first():
+        return jsonify({"message": "already a member"}), 200
+    tm = TeamMembership(team_id=team_id, user_id=member.id,
+                        role_in_team=body.get("role_in_team", "MEMBER"))
+    db.session.add(tm)
+    audit.record("TEAM_MEMBER_ADDED", "team", team_id, actor=user,
+                 new_value=member.email, commit=True)
+    return jsonify(tm.serialize()), 201
+
+
+@api.route("/users", methods=["GET"])
+@permission_required("user.view")
+def list_users(user):
+    users = User.query.filter_by(organization_id=user.organization_id).all()
+    out = []
+    for u in users:
+        data = u.serialize(with_permissions=False)
+        data["team_ids"] = data_scope.user_team_ids(u)
+        out.append(data)
+    return jsonify(out), 200
 
 
 @api.route("/health", methods=["GET"])

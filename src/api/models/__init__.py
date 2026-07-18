@@ -13,10 +13,14 @@ from api.models.base import db, utcnow
 # the shared registry), but all modules must be imported before the first query
 # so every mapper is registered. Importing them here guarantees that.
 from api.models.authz import (
-    Permission, Role, role_permissions,
+    Permission, Role, role_permissions, user_roles,
     PERMISSION_CATALOG, ALL_CODES, DEFAULT_ROLE_PERMISSIONS,
 )
 from api.models.identity import Organization, User, ROLES
+from api.models.tenancy import (
+    Department, Team, OrganizationMembership, TeamMembership, AccessPolicy,
+    MEMBERSHIP_STATUSES, TEAM_ROLES, SCOPE_TYPES,
+)
 from api.models.customer import (
     Customer, Document, RiskAssessment,
     CUSTOMER_TYPES, RISK_LEVELS, HIGH_RISK_COUNTRIES, HIGH_RISK_ACTIVITIES,
@@ -36,9 +40,11 @@ from api.models.audit import AuditEvent
 
 __all__ = [
     "db", "utcnow",
-    "Permission", "Role", "role_permissions",
+    "Permission", "Role", "role_permissions", "user_roles",
     "PERMISSION_CATALOG", "ALL_CODES", "DEFAULT_ROLE_PERMISSIONS",
     "Organization", "User", "ROLES",
+    "Department", "Team", "OrganizationMembership", "TeamMembership", "AccessPolicy",
+    "MEMBERSHIP_STATUSES", "TEAM_ROLES", "SCOPE_TYPES",
     "Customer", "Document", "RiskAssessment",
     "CUSTOMER_TYPES", "RISK_LEVELS", "HIGH_RISK_COUNTRIES", "HIGH_RISK_ACTIVITIES",
     "Party", "OwnershipRelationship",

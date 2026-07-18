@@ -9,12 +9,14 @@ from sqlalchemy import String, Boolean, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from api.models.base import db, utcnow
+from api.models.authz import user_roles
 
 # Role names available in the platform (see authz.DEFAULT_ROLE_PERMISSIONS).
 ROLES = (
     "CUSTOMER_USER", "KYC_ANALYST", "ANALYST", "SENIOR_ANALYST",
     "COMPLIANCE_OFFICER", "COMPLIANCE_MANAGER", "MANAGER", "MLRO",
-    "AUDITOR", "REGULATORY_MANAGER", "PLATFORM_ADMIN", "ADMIN",
+    "AUDITOR", "REGULATORY_MANAGER",
+    "ORGANIZATION_ADMIN", "PLATFORM_ADMIN", "ADMIN",
 )
 
 
@@ -45,11 +47,31 @@ class User(db.Model):
     organization_id: Mapped[int] = mapped_column(ForeignKey("organization.id"), nullable=False)
     organization: Mapped["Organization"] = relationship(back_populates="users")
 
+    # Legacy single role (kept for back-compat / display).
     role_id: Mapped[int] = mapped_column(ForeignKey("role.id"), nullable=True)
-    role_obj: Mapped["Role"] = relationship(lazy="selectin")
+    role_obj: Mapped["Role"] = relationship(lazy="selectin", foreign_keys=[role_id])
+
+    # A user may hold several roles.
+    roles: Mapped[list["Role"]] = relationship(
+        secondary=user_roles, lazy="selectin")
 
     def permission_codes(self):
-        return self.role_obj.permission_codes() if self.role_obj else set()
+        codes = set()
+        if self.role_obj:
+            codes |= self.role_obj.permission_codes()
+        for r in self.roles:
+            codes |= r.permission_codes()
+        return codes
+
+    def role_names(self):
+        names = set()
+        if self.role_obj:
+            names.add(self.role_obj.name)
+        for r in self.roles:
+            names.add(r.name)
+        if not names and self.role:
+            names.add(self.role)
+        return sorted(names)
 
     def has_permission(self, code):
         return code in self.permission_codes()
@@ -60,6 +82,7 @@ class User(db.Model):
             "email": self.email,
             "full_name": self.full_name,
             "role": self.role,
+            "roles": self.role_names(),
             "organization_id": self.organization_id,
         }
         if with_permissions:

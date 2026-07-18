@@ -30,7 +30,7 @@ export const CaseDetail = () => {
 
   const { case: cs, customer, risk, related_events, audit } = data;
   const closed = cs.status === "CLOSED";
-  const canConfirm = can(store.user, "screening.confirm");
+  const canConfirm = can(store.user, "screening.confirm_match");
   const sanctionsMatch = related_events.find((e) => e.event_type === "SANCTIONS_MATCH_FOUND");
 
   return (
@@ -137,7 +137,7 @@ export const CaseDetail = () => {
                     <i className="fa-solid fa-check" /> False positive
                   </button>
                   <button className="btn btn-outline-danger" disabled={busy || !canConfirm}
-                    title={canConfirm ? "" : "Requires screening.confirm permission"} onClick={() => decide("CONFIRMED_MATCH")}>
+                    title={canConfirm ? "" : "Requires screening.confirm_match permission"} onClick={() => decide("CONFIRMED_MATCH")}>
                     <i className="fa-solid fa-triangle-exclamation" /> Confirm match {canConfirm ? "" : "(no permission)"}
                   </button>
                   <button className="btn btn-outline-warning" disabled={busy} onClick={() => decide("ESCALATE")}>

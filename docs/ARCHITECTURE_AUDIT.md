@@ -142,4 +142,11 @@ The project remains runnable after every phase.
 ### Progress so far
 - Increment 1 (RBAC + models package) — shipped.
 - Increment 2 (Parties/Ownership/UBO + ScreeningMatch + provider abstraction) — shipped.
-- **Next: Phase A — Authorization Foundation.**
+- **Phase A (Authorization Foundation)** — shipped: Departments, Teams,
+  OrganizationMembership, TeamMembership, UserRole (multi-role), AccessPolicy;
+  permission catalog reconciled to the document's canonical codes;
+  `ORGANIZATION_ADMIN` added; ABAC data-scope service applied to case/task/
+  workspace queries; tenancy endpoints (`/organization`, `/departments`,
+  `/teams`, `/users`) with permission enforcement.
+- **Next: Phase B — Administration UI** (users, teams, departments, roles,
+  permissions, org settings, invitation flow).

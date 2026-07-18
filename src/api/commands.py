@@ -4,6 +4,7 @@ from api.models import (
     db, Organization, User, Customer, ComplianceRule,
     Party, OwnershipRelationship,
     Department, Team, OrganizationMembership, TeamMembership,
+    AssignmentRule, SLAConfiguration,
 )
 from api.auth import hash_password
 
@@ -131,6 +132,37 @@ def _seed_org_structure(org):
     db.session.commit()
 
 
+def _seed_management(org):
+    """Default SLA targets + assignment rules for the demo org (idempotent)."""
+    for priority, hours in (("CRITICAL", 24), ("HIGH", 72),
+                            ("MEDIUM", 120), ("LOW", 240)):
+        if not SLAConfiguration.query.filter_by(
+                organization_id=org.id, case_priority=priority).first():
+            db.session.add(SLAConfiguration(
+                organization_id=org.id, case_priority=priority,
+                target_hours=hours))
+
+    kyc_team = Team.query.filter_by(name="KYC Team", organization_id=org.id).first()
+    rules = [
+        {"name": "Sanctions -> least loaded (KYC Team)",
+         "case_type": "SANCTIONS_MATCH", "risk_level": None,
+         "team_id": kyc_team.id if kyc_team else None,
+         "strategy": "LEAST_LOADED", "priority": 10},
+        {"name": "High risk -> senior staff",
+         "case_type": None, "risk_level": "HIGH",
+         "team_id": None, "strategy": "RISK_BASED", "priority": 20},
+        {"name": "Default -> round robin",
+         "case_type": None, "risk_level": None,
+         "team_id": kyc_team.id if kyc_team else None,
+         "strategy": "ROUND_ROBIN", "priority": 100},
+    ]
+    for spec in rules:
+        if not AssignmentRule.query.filter_by(
+                organization_id=org.id, name=spec["name"]).first():
+            db.session.add(AssignmentRule(organization_id=org.id, **spec))
+    db.session.commit()
+
+
 def _seed_ownership(org):
     """Build the ownership graph for Alpha Crypto Ltd:
         John Smith --80%--> Beta Holdings --60%--> Alpha Crypto Ltd
@@ -238,6 +270,10 @@ def setup_commands(app):
         _seed_ownership(org)
         click.echo("Ownership graph seeded for 'Alpha Crypto Ltd' "
                    "(UBOs: John Smith 48%, Jane Doe 40%).")
+
+        _seed_management(org)
+        click.echo("Management seeded: SLA targets + assignment rules "
+                   "(sanctions -> LEAST_LOADED on KYC Team, default ROUND_ROBIN).")
         click.echo("Done. Log in and run screening on 'John Smith' or "
                    "'Sergei Ivanov' to see the full chain fire.")
 

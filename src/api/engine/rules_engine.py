@@ -63,6 +63,10 @@ def _run_action(action, *, customer, event, created_case):
         db.session.flush()  # get case.id
         audit.record("CASE_OPENED", "case", case.id, new_value=case.title,
                      reason=f"rule action on {event.event_type}")
+        # Event-driven assignment: a matching AssignmentRule routes the case to
+        # the right person; without a rule it lands in the unassigned queue.
+        from api.engine import assignment
+        assignment.auto_assign(case)
         return case
 
     if atype == "CREATE_TASK":

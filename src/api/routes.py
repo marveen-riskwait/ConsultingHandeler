@@ -15,7 +15,7 @@ from api.models import (
     ComplianceEvent, ComplianceRule, Case, Task, Notification, AuditEvent,
     Party, OwnershipRelationship, ScreeningRun, ScreeningMatch,
     Department, Team, OrganizationMembership, TeamMembership, AccessPolicy,
-    Invitation,
+    Invitation, AssignmentRule, SLAConfiguration,
     utcnow, ROLES, CUSTOMER_TYPES, PARTY_KINDS, PERMISSION_CATALOG,
 )
 from api.utils import APIException
@@ -23,7 +23,7 @@ from api.auth import (
     hash_password, verify_password, make_token, current_user,
     login_required, role_required, permission_required, has_permission,
 )
-from api.engine import risk_engine, audit, ownership, data_scope
+from api.engine import risk_engine, audit, ownership, data_scope, workload, sla, assignment
 from api.engine.screening_service import review_match
 from api.tasks import run_screening
 
@@ -97,6 +97,8 @@ def register():
     db.session.flush()
     db.session.add(OrganizationMembership(
         organization_id=org.id, user_id=user.id, status="ACTIVE"))
+    audit.record("USER_CREATED", "user", user.id, actor_label=email,
+                 new_value=role_name, reason="self-registration")
     db.session.commit()
     return jsonify({"token": make_token(user), "user": user.serialize()}), 201
 
@@ -847,6 +849,9 @@ def update_user(user, uid):
         target.role_id = role.id if role else None
 
     if "is_active" in body:
+        # Disabling/enabling accounts is its own permission (per the catalog).
+        if not has_permission(user, "user.disable"):
+            raise APIException("Missing permission: user.disable", status_code=403)
         if target.id == user.id and not body["is_active"]:
             raise APIException("You cannot disable your own account", status_code=400)
         old = target.is_active
@@ -860,6 +865,74 @@ def update_user(user, uid):
 
     db.session.commit()
     return jsonify(target.serialize(with_permissions=False)), 200
+
+
+@api.route("/users/<int:uid>/roles", methods=["POST"])
+@permission_required("user.update")
+def add_user_role(user, uid):
+    """Grant an ADDITIONAL role (user_roles); permissions become the union."""
+    target = User.query.get(uid)
+    if target is None or target.organization_id != user.organization_id:
+        raise APIException("User not found", status_code=404)
+    body = request.get_json(silent=True) or {}
+    role_name = body.get("role")
+    if role_name not in ROLES:
+        raise APIException(f"Unknown role: {role_name}", status_code=400)
+    if role_name in ("ORGANIZATION_ADMIN", "PLATFORM_ADMIN", "ADMIN") \
+            and not has_permission(user, "role.update"):
+        raise APIException("Missing permission to grant an administrator role",
+                           status_code=403)
+    from api.rbac import get_role
+    role = get_role(role_name)
+    if role in target.roles or (target.role_id and target.role_id == role.id):
+        return jsonify(target.serialize()), 200
+    target.roles.append(role)
+    audit.record("ROLE_ASSIGNED", "user", target.id, actor=user,
+                 new_value=f"+{role_name}", reason="additional role", commit=True)
+    return jsonify(target.serialize()), 200
+
+
+@api.route("/users/<int:uid>/roles/<role_name>", methods=["DELETE"])
+@permission_required("user.update")
+def remove_user_role(user, uid, role_name):
+    """Remove an additional role (the primary role is changed via PATCH)."""
+    target = User.query.get(uid)
+    if target is None or target.organization_id != user.organization_id:
+        raise APIException("User not found", status_code=404)
+    role = next((r for r in target.roles if r.name == role_name), None)
+    if role is None:
+        raise APIException("User does not hold this additional role", status_code=404)
+    target.roles.remove(role)
+    audit.record("ROLE_REMOVED", "user", target.id, actor=user,
+                 old_value=role_name, commit=True)
+    return jsonify(target.serialize()), 200
+
+
+@api.route("/teams/<int:team_id>", methods=["PATCH"])
+@permission_required("team.update")
+def update_team(user, team_id):
+    """Rename a team, move it to a department, or configure its manager."""
+    team = Team.query.get(team_id)
+    if team is None or team.organization_id != user.organization_id:
+        raise APIException("Team not found", status_code=404)
+    body = request.get_json(silent=True) or {}
+    if "name" in body:
+        name = (body["name"] or "").strip()
+        if name:
+            team.name = name
+    if "department_id" in body:
+        team.department_id = body["department_id"] or None
+    if "manager_id" in body:
+        manager = User.query.get(body["manager_id"]) if body["manager_id"] else None
+        if body["manager_id"] and (manager is None or
+                                   manager.organization_id != user.organization_id):
+            raise APIException("Manager not found in organization", status_code=404)
+        old = team.manager_id
+        team.manager_id = manager.id if manager else None
+        audit.record("TEAM_MANAGER_CHANGED", "team", team.id, actor=user,
+                     old_value=str(old), new_value=str(team.manager_id))
+    db.session.commit()
+    return jsonify(team.serialize(with_members=True)), 200
 
 
 @api.route("/organization", methods=["PATCH"])
@@ -876,6 +949,156 @@ def update_organization(user):
         org.name = name
     db.session.commit()
     return jsonify(org.serialize()), 200
+
+
+# ---------------------------------------------------------------------------
+# Management operations — dashboard, workload, queues, assignment, SLA
+# ---------------------------------------------------------------------------
+def _org_cases(user):
+    ids = [c.id for c in Customer.query
+           .filter_by(organization_id=user.organization_id).all()]
+    return Case.query.filter(Case.customer_id.in_(ids or [0]))
+
+
+@api.route("/management/dashboard", methods=["GET"])
+@permission_required("management.view")
+def management_dashboard(user):
+    now = utcnow()
+    all_cases = _org_cases(user).all()
+    open_cases = [c for c in all_cases if c.status != "CLOSED"]
+    closed_30d = [c for c in all_cases if c.status == "CLOSED" and c.closed_at
+                  and (now - c.closed_at).days <= 30]
+    org_customer_ids = [c.id for c in Customer.query
+                        .filter_by(organization_id=user.organization_id).all()]
+    open_tasks = (Task.query.filter(Task.customer_id.in_(org_customer_ids or [0]))
+                  .filter(Task.status != "DONE").all())
+    high_risk_customers = (Customer.query
+                           .filter_by(organization_id=user.organization_id)
+                           .filter(Customer.risk_level.in_(["HIGH", "CRITICAL"]))
+                           .count())
+    status_counts = {}
+    for c in open_cases:
+        status_counts[c.status] = status_counts.get(c.status, 0) + 1
+    escalated = [c for c in all_cases if c.status == "ESCALATED" or c.decision == "ESCALATE"]
+
+    resolution_hours = [(c.closed_at - c.opened_at).total_seconds() / 3600
+                        for c in closed_30d if c.opened_at and c.closed_at]
+
+    return jsonify({
+        "open_cases": len(open_cases),
+        "unassigned_cases": len([c for c in open_cases if not c.assigned_to]),
+        "overdue_tasks": len([t for t in open_tasks if t.due_at and t.due_at < now]),
+        "cases_due_today": len([c for c in open_cases if c.due_at
+                                and c.due_at <= now + timedelta(days=1)]),
+        "high_risk_cases": len([c for c in open_cases
+                                if c.priority in ("HIGH", "CRITICAL")]),
+        "critical_alerts": len([c for c in open_cases if c.priority == "CRITICAL"]),
+        "high_risk_customers": high_risk_customers,
+        "cases_by_status": status_counts,
+        "cases_closed_30d": len(closed_30d),
+        "average_resolution_hours": (round(sum(resolution_hours) / len(resolution_hours), 1)
+                                     if resolution_hours else None),
+        "escalation_rate_pct": (round(100 * len(escalated) / len(all_cases))
+                                if all_cases else 0),
+        "team_workload": workload.org_workload(user.organization_id),
+        "sla": sla.sla_summary(open_cases, user.organization_id),
+    }), 200
+
+
+@api.route("/management/workload", methods=["GET"])
+@permission_required("management.team_view")
+def management_workload(user):
+    return jsonify(workload.org_workload(user.organization_id)), 200
+
+
+@api.route("/management/queues", methods=["GET"])
+@permission_required("management.view")
+def management_queues(user):
+    now = utcnow()
+    unassigned = (_org_cases(user)
+                  .filter(Case.status != "CLOSED")
+                  .filter(Case.assigned_to.is_(None))
+                  .order_by(Case.opened_at.asc()).all())
+    prio = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+    unassigned.sort(key=lambda c: (prio.get(c.priority, 9), c.opened_at or now))
+    out = []
+    for c in unassigned:
+        data = c.serialize()
+        cust = Customer.query.get(c.customer_id)
+        data["customer_name"] = cust.name if cust else None
+        data["age_hours"] = round((now - c.opened_at).total_seconds() / 3600, 1) \
+            if c.opened_at else None
+        out.append(data)
+    return jsonify(out), 200
+
+
+@api.route("/cases/<int:case_id>/assign", methods=["POST"])
+@permission_required("management.assign_work", "case.assign")
+def assign_case(user, case_id):
+    case = Case.query.get(case_id)
+    if case is None:
+        raise APIException("Case not found", status_code=404)
+    _get_customer_for(user, case.customer_id)
+    body = request.get_json(silent=True) or {}
+    target_id = body.get("user_id")
+    if target_id:
+        target = User.query.get(target_id)
+        if target is None or target.organization_id != user.organization_id:
+            raise APIException("Assignee not found in organization", status_code=404)
+        old = case.assigned_to
+        case.assigned_to = target.id
+        audit.record("CASE_REASSIGNED" if old else "CASE_ASSIGNED", "case",
+                     case.id, actor=user, old_value=str(old),
+                     new_value=target.email, reason="manual", commit=True)
+        return jsonify(case.serialize()), 200
+    # No user_id -> automatic assignment by strategy/rules.
+    assignee = assignment.auto_assign(
+        case, strategy=body.get("strategy", "LEAST_LOADED"), actor=user)
+    if assignee is None:
+        raise APIException("No eligible assignee found", status_code=409)
+    return jsonify(case.serialize()), 200
+
+
+@api.route("/management/queues/bulk-assign", methods=["POST"])
+@permission_required("management.assign_work")
+def bulk_assign(user):
+    body = request.get_json(silent=True) or {}
+    strategy = body.get("strategy", "LEAST_LOADED")
+    unassigned = (_org_cases(user)
+                  .filter(Case.status != "CLOSED")
+                  .filter(Case.assigned_to.is_(None)).all())
+    assigned = 0
+    for case in unassigned:
+        if assignment.auto_assign(case, strategy=strategy, actor=user):
+            assigned += 1
+    return jsonify({"assigned": assigned, "remaining": len(unassigned) - assigned}), 200
+
+
+@api.route("/management/sla", methods=["GET"])
+@permission_required("management.performance_view")
+def management_sla(user):
+    open_cases = _org_cases(user).filter(Case.status != "CLOSED").all()
+    hours_map = sla.target_hours_map(user.organization_id)
+    detail = []
+    for c in open_cases:
+        s = sla.case_sla(c, hours_map)
+        cust = Customer.query.get(c.customer_id)
+        detail.append({**c.serialize(), "customer_name": cust.name if cust else None,
+                       "sla_status": s["status"], "sla_deadline": s["deadline"]})
+    return jsonify({
+        "summary": sla.sla_summary(open_cases, user.organization_id),
+        "targets": hours_map,
+        "cases": detail,
+    }), 200
+
+
+@api.route("/assignment-rules", methods=["GET"])
+@permission_required("management.view")
+def list_assignment_rules(user):
+    rules = (AssignmentRule.query
+             .filter_by(organization_id=user.organization_id)
+             .order_by(AssignmentRule.priority).all())
+    return jsonify([r.serialize() for r in rules]), 200
 
 
 @api.route("/health", methods=["GET"])

@@ -155,5 +155,17 @@ The project remains runnable after every phase.
   disabled-account login rejection; frontend Administration area
   (Users / Teams & Departments / Roles permission matrix / Organization) gated
   by permissions, invite-link accept mode on the Login screen.
-- **Next: Phase C — Management** (manager dashboard, workload engine, queues,
-  assignment engine, SLA, performance).
+- **Phase C (Management)** — shipped: AssignmentRule + SLAConfiguration models;
+  workload engine (per-user explainable workload_score); assignment engine
+  (ROUND_ROBIN / LEAST_LOADED / SKILL_BASED / RISK_BASED / MANUAL) wired into
+  the rules engine so new cases are auto-assigned event-driven (unmatched cases
+  land in the queue); SLA engine (on-time / at-risk / breached from
+  per-priority target hours); endpoints /management/dashboard, /workload,
+  /queues (+bulk-assign), /sla, /cases/:id/assign, /assignment-rules; Manager
+  workspace UI (Operations dashboard with team-workload bars + SLA, Queues with
+  manual/auto/bulk assign, Workload table). Review fixes from the doc check:
+  user.disable gating, user multi-role add/remove endpoints, PATCH /teams/:id
+  (manager config), USER_CREATED audit on registration.
+- **Next: Phase D — Domain refactor** (explicit Person / LegalEntity /
+  CustomerRelationship / Address on top of the Party layer), then Phase E
+  (KYC/KYB profiles + Requirement engine).

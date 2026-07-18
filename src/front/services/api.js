@@ -72,6 +72,14 @@ export const api = {
   createDepartment: (payload) => request("/departments", { method: "POST", body: payload }),
   roles: () => request("/roles"),
   permissionsCatalog: () => request("/permissions"),
+  // management
+  managementDashboard: () => request("/management/dashboard"),
+  managementWorkload: () => request("/management/workload"),
+  managementQueues: () => request("/management/queues"),
+  managementSla: () => request("/management/sla"),
+  assignCase: (id, payload) => request(`/cases/${id}/assign`, { method: "POST", body: payload }),
+  bulkAssign: (strategy) => request("/management/queues/bulk-assign", { method: "POST", body: { strategy } }),
+
   invitations: () => request("/invitations"),
   createInvitation: (payload) => request("/invitations", { method: "POST", body: payload }),
   revokeInvitation: (id) => request(`/invitations/${id}/revoke`, { method: "POST" }),

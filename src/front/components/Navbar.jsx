@@ -7,6 +7,7 @@ import { filterByPermission } from "../permissions/can";
 const NAV_ITEMS = [
   { to: "/", end: true, icon: "fa-inbox", label: "My Work", permission: "workspace.view" },
   { to: "/customers", icon: "fa-users", label: "Customers", permission: "customer.view" },
+  { to: "/administration", icon: "fa-gear", label: "Admin", permission: "user.view" },
 ];
 
 export const Navbar = () => {

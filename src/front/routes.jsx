@@ -9,6 +9,7 @@ import { Workspace } from "./pages/Workspace";
 import { Customers } from "./pages/Customers";
 import { Customer360 } from "./pages/Customer360";
 import { CaseDetail } from "./pages/CaseDetail";
+import { Administration } from "./pages/Administration";
 
 export const router = createBrowserRouter(
   createRoutesFromElements(
@@ -17,6 +18,7 @@ export const router = createBrowserRouter(
       <Route path="/customers" element={<Customers />} />
       <Route path="/customers/:id" element={<Customer360 />} />
       <Route path="/cases/:id" element={<CaseDetail />} />
+      <Route path="/administration" element={<Administration />} />
     </Route>
   ),
   // Login sits outside the Layout (no navbar).

@@ -4,9 +4,11 @@ import { api } from "../services/api";
 
 export const Login = () => {
   const { dispatch } = useGlobalReducer();
-  const [mode, setMode] = useState("login");
-  const [email, setEmail] = useState("analyst@demo.io");
-  const [password, setPassword] = useState("demo1234");
+  // An invitation link (?invite=TOKEN) switches the screen to accept mode.
+  const inviteToken = new URLSearchParams(window.location.search).get("invite");
+  const [mode, setMode] = useState(inviteToken ? "invite" : "login");
+  const [email, setEmail] = useState(inviteToken ? "" : "analyst@demo.io");
+  const [password, setPassword] = useState(inviteToken ? "" : "demo1234");
   const [fullName, setFullName] = useState("");
   const [orgName, setOrgName] = useState("");
   const [error, setError] = useState(null);
@@ -17,9 +19,15 @@ export const Login = () => {
     setBusy(true);
     setError(null);
     try {
-      const data = mode === "login"
-        ? await api.login(email, password)
-        : await api.register({ email, password, full_name: fullName, organization_name: orgName });
+      let data;
+      if (mode === "invite") {
+        data = await api.acceptInvitation({ token: inviteToken, password, full_name: fullName });
+        window.history.replaceState({}, "", "/");
+      } else if (mode === "login") {
+        data = await api.login(email, password);
+      } else {
+        data = await api.register({ email, password, full_name: fullName, organization_name: orgName });
+      }
       dispatch({ type: "login", payload: data });
     } catch (err) {
       setError(err.message);
@@ -36,8 +44,17 @@ export const Login = () => {
           <h4 style={{ margin: 0 }}>Compliance OS</h4>
         </div>
         <p className="muted" style={{ fontSize: ".85rem" }}>
-          {mode === "login" ? "Sign in to your compliance workspace" : "Create a new organization"}
+          {mode === "login" ? "Sign in to your compliance workspace"
+            : mode === "invite" ? "You have been invited — set up your account"
+            : "Create a new organization"}
         </p>
+
+        {mode === "invite" && (
+          <>
+            <label className="form-label mt-2">Full name</label>
+            <input className="form-control" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+          </>
+        )}
 
         {mode === "register" && (
           <>
@@ -48,16 +65,21 @@ export const Login = () => {
           </>
         )}
 
-        <label className="form-label mt-2">Email</label>
-        <input type="email" className="form-control" value={email} onChange={(e) => setEmail(e.target.value)} required />
+        {mode !== "invite" && (
+          <>
+            <label className="form-label mt-2">Email</label>
+            <input type="email" className="form-control" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          </>
+        )}
 
-        <label className="form-label mt-2">Password</label>
+        <label className="form-label mt-2">{mode === "invite" ? "Choose a password" : "Password"}</label>
         <input type="password" className="form-control" value={password} onChange={(e) => setPassword(e.target.value)} required />
 
         {error && <div className="alert alert-danger py-2 mt-3 mb-0" style={{ fontSize: ".85rem" }}>{error}</div>}
 
         <button className="btn btn-co w-100 mt-3" disabled={busy}>
-          {busy ? "Please wait…" : mode === "login" ? "Sign in" : "Create workspace"}
+          {busy ? "Please wait…" : mode === "login" ? "Sign in"
+            : mode === "invite" ? "Join organization" : "Create workspace"}
         </button>
 
         <div className="text-center mt-3" style={{ fontSize: ".85rem" }}>

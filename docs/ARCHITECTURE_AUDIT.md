@@ -148,5 +148,12 @@ The project remains runnable after every phase.
   `ORGANIZATION_ADMIN` added; ABAC data-scope service applied to case/task/
   workspace queries; tenancy endpoints (`/organization`, `/departments`,
   `/teams`, `/users`) with permission enforcement.
-- **Next: Phase B — Administration UI** (users, teams, departments, roles,
-  permissions, org settings, invitation flow).
+- **Phase B (Administration)** — shipped: Invitation model + accept flow
+  (`/invitations`, `/auth/accept-invitation` with token, auto org membership +
+  team assignment), user management (`PATCH /users/:id` role change / disable,
+  admin-role grants gated by `role.update`), org settings (`PATCH /organization`),
+  disabled-account login rejection; frontend Administration area
+  (Users / Teams & Departments / Roles permission matrix / Organization) gated
+  by permissions, invite-link accept mode on the Login screen.
+- **Next: Phase C — Management** (manager dashboard, workload engine, queues,
+  assignment engine, SLA, performance).

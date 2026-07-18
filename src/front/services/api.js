@@ -59,4 +59,21 @@ export const api = {
   notifications: () => request("/notifications"),
   readNotification: (id) => request(`/notifications/${id}/read`, { method: "POST" }),
   rules: () => request("/rules"),
+
+  // administration
+  organization: () => request("/organization"),
+  updateOrganization: (payload) => request("/organization", { method: "PATCH", body: payload }),
+  users: () => request("/users"),
+  updateUser: (id, payload) => request(`/users/${id}`, { method: "PATCH", body: payload }),
+  teams: () => request("/teams"),
+  createTeam: (payload) => request("/teams", { method: "POST", body: payload }),
+  addTeamMember: (teamId, payload) => request(`/teams/${teamId}/members`, { method: "POST", body: payload }),
+  departments: () => request("/departments"),
+  createDepartment: (payload) => request("/departments", { method: "POST", body: payload }),
+  roles: () => request("/roles"),
+  permissionsCatalog: () => request("/permissions"),
+  invitations: () => request("/invitations"),
+  createInvitation: (payload) => request("/invitations", { method: "POST", body: payload }),
+  revokeInvitation: (id) => request(`/invitations/${id}/revoke`, { method: "POST" }),
+  acceptInvitation: (payload) => request("/auth/accept-invitation", { method: "POST", body: payload }),
 };

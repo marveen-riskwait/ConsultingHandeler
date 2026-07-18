@@ -15,6 +15,7 @@ from api.models import (
     ComplianceEvent, ComplianceRule, Case, Task, Notification, AuditEvent,
     Party, OwnershipRelationship, ScreeningRun, ScreeningMatch,
     Department, Team, OrganizationMembership, TeamMembership, AccessPolicy,
+    Invitation,
     utcnow, ROLES, CUSTOMER_TYPES, PARTY_KINDS, PERMISSION_CATALOG,
 )
 from api.utils import APIException
@@ -108,6 +109,8 @@ def login():
     user = User.query.filter_by(email=email).first()
     if user is None or not verify_password(user, password):
         raise APIException("Invalid credentials", status_code=401)
+    if not user.is_active:
+        raise APIException("This account has been disabled", status_code=401)
     return jsonify({"token": make_token(user), "user": user.serialize()}), 200
 
 
@@ -715,6 +718,164 @@ def list_users(user):
         data["team_ids"] = data_scope.user_team_ids(u)
         out.append(data)
     return jsonify(out), 200
+
+
+# ---------------------------------------------------------------------------
+# Administration — invitations, user management, organization settings
+# ---------------------------------------------------------------------------
+@api.route("/invitations", methods=["GET"])
+@permission_required("user.view")
+def list_invitations(user):
+    invs = (Invitation.query.filter_by(organization_id=user.organization_id)
+            .order_by(Invitation.created_at.desc()).all())
+    return jsonify([i.serialize() for i in invs]), 200
+
+
+@api.route("/invitations", methods=["POST"])
+@permission_required("user.create")
+def create_invitation(user):
+    body = request.get_json(silent=True) or {}
+    email = (body.get("email") or "").strip().lower()
+    if not email:
+        raise APIException("email is required", status_code=400)
+    if User.query.filter_by(email=email).first():
+        raise APIException("A user with this email already exists", status_code=409)
+    role_name = body.get("proposed_role", "KYC_ANALYST")
+    if role_name not in ROLES:
+        raise APIException(f"Unknown role: {role_name}", status_code=400)
+    # Only an admin can invite another admin.
+    if role_name in ("ORGANIZATION_ADMIN", "PLATFORM_ADMIN", "ADMIN") \
+            and not has_permission(user, "role.update"):
+        raise APIException("Missing permission to invite an administrator",
+                           status_code=403)
+    team_id = body.get("proposed_team_id")
+    if team_id:
+        team = Team.query.get(team_id)
+        if team is None or team.organization_id != user.organization_id:
+            raise APIException("Team not found", status_code=404)
+
+    inv = Invitation(
+        organization_id=user.organization_id,
+        email=email,
+        proposed_role=role_name,
+        proposed_team_id=team_id,
+        created_by=user.id,
+    )
+    db.session.add(inv)
+    audit.record("USER_INVITED", "invitation", None, actor=user,
+                 new_value=f"{email} as {role_name}", commit=True)
+    # Token returned once, to the inviter (no email channel yet — the admin
+    # shares the invite link out-of-band).
+    return jsonify(inv.serialize(with_token=True)), 201
+
+
+@api.route("/invitations/<int:inv_id>/revoke", methods=["POST"])
+@permission_required("user.create")
+def revoke_invitation(user, inv_id):
+    inv = Invitation.query.get(inv_id)
+    if inv is None or inv.organization_id != user.organization_id:
+        raise APIException("Invitation not found", status_code=404)
+    if inv.status != "PENDING":
+        raise APIException("Only pending invitations can be revoked", status_code=400)
+    inv.status = "REVOKED"
+    audit.record("INVITATION_REVOKED", "invitation", inv.id, actor=user,
+                 new_value=inv.email, commit=True)
+    return jsonify(inv.serialize()), 200
+
+
+@api.route("/auth/accept-invitation", methods=["POST"])
+def accept_invitation():
+    """Public endpoint: turn a valid invitation token into an account."""
+    body = request.get_json(silent=True) or {}
+    token = body.get("token") or ""
+    password = body.get("password") or ""
+    if not token or not password:
+        raise APIException("token and password are required", status_code=400)
+    inv = Invitation.query.filter_by(token=token).first()
+    if inv is None or not inv.is_valid():
+        raise APIException("Invitation is invalid or expired", status_code=400)
+    if User.query.filter_by(email=inv.email).first():
+        raise APIException("A user with this email already exists", status_code=409)
+
+    from api.rbac import get_role
+    role = get_role(inv.proposed_role)
+    new_user = User(
+        email=inv.email,
+        password=hash_password(password),
+        full_name=body.get("full_name") or inv.email.split("@")[0],
+        role=inv.proposed_role,
+        role_id=role.id if role else None,
+        organization_id=inv.organization_id,
+    )
+    db.session.add(new_user)
+    db.session.flush()
+    db.session.add(OrganizationMembership(
+        organization_id=inv.organization_id, user_id=new_user.id, status="ACTIVE"))
+    if inv.proposed_team_id:
+        db.session.add(TeamMembership(team_id=inv.proposed_team_id,
+                                      user_id=new_user.id, role_in_team="MEMBER"))
+    inv.status = "ACCEPTED"
+    inv.accepted_at = utcnow()
+    audit.record("INVITATION_ACCEPTED", "user", new_user.id,
+                 actor_label=inv.email, new_value=inv.proposed_role)
+    db.session.commit()
+    return jsonify({"token": make_token(new_user),
+                    "user": new_user.serialize()}), 201
+
+
+@api.route("/users/<int:uid>", methods=["PATCH"])
+@permission_required("user.update")
+def update_user(user, uid):
+    target = User.query.get(uid)
+    if target is None or target.organization_id != user.organization_id:
+        raise APIException("User not found", status_code=404)
+    body = request.get_json(silent=True) or {}
+
+    if "role" in body:
+        role_name = body["role"]
+        if role_name not in ROLES:
+            raise APIException(f"Unknown role: {role_name}", status_code=400)
+        if role_name in ("ORGANIZATION_ADMIN", "PLATFORM_ADMIN", "ADMIN") \
+                and not has_permission(user, "role.update"):
+            raise APIException("Missing permission to grant an administrator role",
+                               status_code=403)
+        from api.rbac import get_role
+        role = get_role(role_name)
+        audit.record("ROLE_ASSIGNED", "user", target.id, actor=user,
+                     old_value=target.role, new_value=role_name)
+        target.role = role_name
+        target.role_id = role.id if role else None
+
+    if "is_active" in body:
+        if target.id == user.id and not body["is_active"]:
+            raise APIException("You cannot disable your own account", status_code=400)
+        old = target.is_active
+        target.is_active = bool(body["is_active"])
+        audit.record("USER_DISABLED" if not target.is_active else "USER_ENABLED",
+                     "user", target.id, actor=user,
+                     old_value=str(old), new_value=str(target.is_active))
+
+    if "full_name" in body:
+        target.full_name = (body["full_name"] or "").strip() or target.full_name
+
+    db.session.commit()
+    return jsonify(target.serialize(with_permissions=False)), 200
+
+
+@api.route("/organization", methods=["PATCH"])
+@permission_required("organization.update")
+def update_organization(user):
+    org = user.organization
+    body = request.get_json(silent=True) or {}
+    if "name" in body:
+        name = (body["name"] or "").strip()
+        if not name:
+            raise APIException("name cannot be empty", status_code=400)
+        audit.record("ORGANIZATION_UPDATED", "organization", org.id, actor=user,
+                     old_value=org.name, new_value=name)
+        org.name = name
+    db.session.commit()
+    return jsonify(org.serialize()), 200
 
 
 @api.route("/health", methods=["GET"])

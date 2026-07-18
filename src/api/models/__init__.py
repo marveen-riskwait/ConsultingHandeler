@@ -21,6 +21,7 @@ from api.models.tenancy import (
     Department, Team, OrganizationMembership, TeamMembership, AccessPolicy,
     MEMBERSHIP_STATUSES, TEAM_ROLES, SCOPE_TYPES,
 )
+from api.models.invitations import Invitation, INVITATION_STATUSES
 from api.models.customer import (
     Customer, Document, RiskAssessment,
     CUSTOMER_TYPES, RISK_LEVELS, HIGH_RISK_COUNTRIES, HIGH_RISK_ACTIVITIES,
@@ -45,6 +46,7 @@ __all__ = [
     "Organization", "User", "ROLES",
     "Department", "Team", "OrganizationMembership", "TeamMembership", "AccessPolicy",
     "MEMBERSHIP_STATUSES", "TEAM_ROLES", "SCOPE_TYPES",
+    "Invitation", "INVITATION_STATUSES",
     "Customer", "Document", "RiskAssessment",
     "CUSTOMER_TYPES", "RISK_LEVELS", "HIGH_RISK_COUNTRIES", "HIGH_RISK_ACTIVITIES",
     "Party", "OwnershipRelationship",

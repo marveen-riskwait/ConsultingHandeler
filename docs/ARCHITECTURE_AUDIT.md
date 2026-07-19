@@ -166,6 +166,19 @@ The project remains runnable after every phase.
   manual/auto/bulk assign, Workload table). Review fixes from the doc check:
   user.disable gating, user multi-role add/remove endpoints, PATCH /teams/:id
   (manager config), USER_CREATED audit on registration.
-- **Next: Phase D — Domain refactor** (explicit Person / LegalEntity /
-  CustomerRelationship / Address on top of the Party layer), then Phase E
-  (KYC/KYB profiles + Requirement engine).
+- **Phase D (Domain refactor)** — shipped: explicit **Person / LegalEntity**
+  via single-table polymorphism on Party (`polymorphic_on kind`, no schema
+  change — existing rows load as the right subclass); **Address** model with
+  full history (is_current / valid_from / valid_to, old row kept on replace);
+  `engine/party_service.py` turns KYB mutations into spine EVENTS
+  (DIRECTOR_CHANGED / OWNERSHIP_CHANGED / UBO_CHANGED / ADDRESS_CHANGED) with
+  UBO-diff detection; `complex_ownership` now **derived from the graph shape**
+  instead of a manual boolean, and folded into risk; new rules (director ->
+  screen, ownership -> review, UBO -> verify, address -> info); endpoints
+  POST /customers/:id/ownership (now event-driven), GET/POST
+  /customers/:id/addresses, GET /parties/:id; Customer 360 gains an Add-owner
+  KYB form (relationship + kind + %), a Directors list, and an Addresses card
+  with history — permission-gated (kyb.edit / kyc.edit).
+- **Next: Phase E — KYC/KYB + Requirement Engine** (field provenance,
+  required-info / missing-info detection, document requirements) then Phase F
+  (provider integration layer + webhooks).

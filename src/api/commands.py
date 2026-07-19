@@ -79,6 +79,59 @@ DEFAULT_RULES = [
              "message": "A customer document is about to expire."},
         ],
     },
+    {
+        "name": "New director -> screen them",
+        "event_type": "DIRECTOR_CHANGED",
+        "conditions": {},
+        "actions": [
+            {"type": "CREATE_TASK", "task_type": "DIRECTOR_SCREENING",
+             "title": "Screen new director (sanctions / PEP / adverse media)",
+             "priority": "HIGH", "due_days": 3},
+            {"type": "NOTIFY", "severity": "HIGH", "requires_action": True,
+             "roles": ["COMPLIANCE_OFFICER", "ANALYST", "KYC_ANALYST"],
+             "title": "Director changed",
+             "message": "A new director was detected — screening required."},
+        ],
+    },
+    {
+        "name": "Ownership changed -> review structure",
+        "event_type": "OWNERSHIP_CHANGED",
+        "conditions": {},
+        "actions": [
+            {"type": "CREATE_TASK", "task_type": "OWNERSHIP_REVIEW",
+             "title": "Review updated ownership structure",
+             "priority": "MEDIUM", "due_days": 7},
+            {"type": "NOTIFY", "severity": "MEDIUM", "requires_action": False,
+             "roles": ["ANALYST", "KYC_ANALYST"],
+             "title": "Ownership structure changed",
+             "message": "The ownership structure changed — review the graph."},
+        ],
+    },
+    {
+        "name": "UBO changed -> verify",
+        "event_type": "UBO_CHANGED",
+        "conditions": {},
+        "actions": [
+            {"type": "CREATE_TASK", "task_type": "UBO_VERIFICATION",
+             "title": "Verify new Ultimate Beneficial Owner",
+             "priority": "HIGH", "due_days": 5},
+            {"type": "NOTIFY", "severity": "HIGH", "requires_action": True,
+             "roles": ["COMPLIANCE_OFFICER", "ANALYST", "KYC_ANALYST"],
+             "title": "UBO changed",
+             "message": "The Ultimate Beneficial Owner set changed — verification required."},
+        ],
+    },
+    {
+        "name": "Address changed -> info",
+        "event_type": "ADDRESS_CHANGED",
+        "conditions": {},
+        "actions": [
+            {"type": "NOTIFY", "severity": "INFO", "requires_action": False,
+             "roles": ["ANALYST", "KYC_ANALYST"],
+             "title": "Address changed",
+             "message": "A customer address changed."},
+        ],
+    },
 ]
 
 
@@ -173,19 +226,21 @@ def _seed_ownership(org):
     if alpha is None or alpha.root_party_id:
         return
 
-    def party(kind, name, **kw):
-        p = Party(organization_id=org.id, kind=kind, name=name, **kw)
+    from api.models import Person, LegalEntity
+
+    def party(cls, name, **kw):
+        p = cls(organization_id=org.id, name=name, **kw)
         db.session.add(p)
         db.session.flush()
         return p
 
-    root = party("ORGANIZATION", "Alpha Crypto Ltd", customer_id=alpha.id,
+    root = party(LegalEntity, "Alpha Crypto Ltd", customer_id=alpha.id,
                  business_activity="crypto exchange", country_of_incorporation="Panama")
     alpha.root_party_id = root.id
-    beta = party("ORGANIZATION", "Beta Holdings", country_of_incorporation="Luxembourg")
-    john = party("PERSON", "John Smith", nationality="United Kingdom",
+    beta = party(LegalEntity, "Beta Holdings", country_of_incorporation="Luxembourg")
+    john = party(Person, "John Smith", nationality="United Kingdom",
                  country_of_residence="United Kingdom")
-    jane = party("PERSON", "Jane Doe", nationality="France",
+    jane = party(Person, "Jane Doe", nationality="France",
                  country_of_residence="Luxembourg")
 
     def edge(owner, owned, pct, rtype="SHAREHOLDER"):

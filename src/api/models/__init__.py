@@ -30,8 +30,8 @@ from api.models.customer import (
     CUSTOMER_TYPES, RISK_LEVELS, HIGH_RISK_COUNTRIES, HIGH_RISK_ACTIVITIES,
 )
 from api.models.parties import (
-    Party, OwnershipRelationship,
-    PARTY_KINDS, RELATIONSHIP_TYPES, CONTROL_TYPES, UBO_THRESHOLD,
+    Party, Person, LegalEntity, Address, OwnershipRelationship,
+    PARTY_KINDS, RELATIONSHIP_TYPES, CONTROL_TYPES, ADDRESS_TYPES, UBO_THRESHOLD,
 )
 from api.models.screening import (
     ScreeningRun, ScreeningMatch,
@@ -53,8 +53,9 @@ __all__ = [
     "AssignmentRule", "SLAConfiguration", "ASSIGNMENT_STRATEGIES",
     "Customer", "Document", "RiskAssessment",
     "CUSTOMER_TYPES", "RISK_LEVELS", "HIGH_RISK_COUNTRIES", "HIGH_RISK_ACTIVITIES",
-    "Party", "OwnershipRelationship",
-    "PARTY_KINDS", "RELATIONSHIP_TYPES", "CONTROL_TYPES", "UBO_THRESHOLD",
+    "Party", "Person", "LegalEntity", "Address", "OwnershipRelationship",
+    "PARTY_KINDS", "RELATIONSHIP_TYPES", "CONTROL_TYPES", "ADDRESS_TYPES",
+    "UBO_THRESHOLD",
     "ScreeningRun", "ScreeningMatch",
     "MATCH_TYPES", "MATCH_STATUSES", "ACTIVE_MATCH_STATUSES",
     "ComplianceEvent", "ComplianceRule", "EVENT_SEVERITIES",

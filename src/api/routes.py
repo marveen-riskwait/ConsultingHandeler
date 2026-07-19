@@ -13,7 +13,8 @@ from flask_cors import CORS
 from api.models import (
     db, Organization, User, Role, Permission, Customer, Document, RiskAssessment,
     ComplianceEvent, ComplianceRule, Case, Task, Notification, AuditEvent,
-    Party, OwnershipRelationship, ScreeningRun, ScreeningMatch,
+    Party, Person, LegalEntity, Address, OwnershipRelationship,
+    ScreeningRun, ScreeningMatch,
     Department, Team, OrganizationMembership, TeamMembership, AccessPolicy,
     Invitation, AssignmentRule, SLAConfiguration,
     utcnow, ROLES, CUSTOMER_TYPES, PARTY_KINDS, PERMISSION_CATALOG,
@@ -23,7 +24,8 @@ from api.auth import (
     hash_password, verify_password, make_token, current_user,
     login_required, role_required, permission_required, has_permission,
 )
-from api.engine import risk_engine, audit, ownership, data_scope, workload, sla, assignment
+from api.engine import (risk_engine, audit, ownership, data_scope, workload,
+                        sla, assignment, party_service)
 from api.engine.screening_service import review_match
 from api.tasks import run_screening
 
@@ -270,26 +272,8 @@ def customer_timeline(user, cid):
 
 
 # ---------------------------------------------------------------------------
-# Ownership / KYB — parties, graph & UBOs
+# Ownership / KYB — parties, graph, UBOs, directors & addresses
 # ---------------------------------------------------------------------------
-def _ensure_root_party(customer):
-    if customer.root_party_id:
-        return Party.query.get(customer.root_party_id)
-    kind = "ORGANIZATION" if customer.customer_type == "COMPANY" else "PERSON"
-    party = Party(
-        organization_id=customer.organization_id,
-        kind=kind, name=customer.name, customer_id=customer.id,
-        business_activity=customer.business_activity,
-        country_of_incorporation=customer.country if kind == "ORGANIZATION" else None,
-        country_of_residence=customer.country if kind == "PERSON" else None,
-    )
-    db.session.add(party)
-    db.session.flush()
-    customer.root_party_id = party.id
-    db.session.commit()
-    return party
-
-
 @api.route("/customers/<int:cid>/ownership", methods=["GET"])
 @permission_required("customer.view")
 def customer_ownership(user, cid):
@@ -297,6 +281,8 @@ def customer_ownership(user, cid):
     graph = ownership.build_graph(customer)
     ubos = ownership.compute_ubos(customer)
     return jsonify({"graph": graph, "ubos": ubos,
+                    "directors": ownership.directors_of(customer),
+                    "complex_ownership": customer.complex_ownership,
                     "root_party_id": customer.root_party_id}), 200
 
 
@@ -312,33 +298,58 @@ def add_ownership(user, cid):
     if kind not in PARTY_KINDS:
         kind = "PERSON"
 
-    root = _ensure_root_party(customer)
-    # The edge points at the owned party: the root by default, or another party.
-    owned_id = body.get("owned_party_id") or root.id
-
-    owner = Party(
-        organization_id=customer.organization_id,
-        kind=kind, name=owner_name,
-        nationality=body.get("nationality"),
-        country_of_residence=body.get("country") if kind == "PERSON" else None,
-        country_of_incorporation=body.get("country") if kind == "ORGANIZATION" else None,
-    )
-    db.session.add(owner)
-    db.session.flush()
-
-    edge = OwnershipRelationship(
-        organization_id=customer.organization_id,
-        owner_party_id=owner.id,
-        owned_party_id=owned_id,
+    owner, edge, emitted = party_service.add_related_party(
+        customer,
+        owner_name=owner_name,
+        owner_kind=kind,
         relationship_type=body.get("relationship_type", "SHAREHOLDER"),
-        percentage=float(body.get("percentage") or 0),
+        percentage=body.get("percentage") or 0,
         control_type=body.get("control_type"),
+        country=body.get("country"),
+        nationality=body.get("nationality"),
+        owned_party_id=body.get("owned_party_id"),
+        actor=user,
     )
-    db.session.add(edge)
-    audit.record("OWNERSHIP_ADDED", "customer", customer.id, actor=user,
-                 new_value=f"{owner_name} -> {edge.percentage}%",
-                 reason="KYB", commit=True)
-    return jsonify({"owner": owner.serialize(), "edge": edge.serialize()}), 201
+    return jsonify({"owner": owner.serialize(), "edge": edge.serialize(),
+                    "events": emitted}), 201
+
+
+@api.route("/customers/<int:cid>/addresses", methods=["GET"])
+@permission_required("customer.view")
+def list_addresses(user, cid):
+    customer = _get_customer_for(user, cid)
+    if not customer.root_party_id:
+        return jsonify([]), 200
+    addrs = (Address.query.filter_by(party_id=customer.root_party_id)
+             .order_by(Address.is_current.desc(), Address.valid_from.desc()).all())
+    return jsonify([a.serialize() for a in addrs]), 200
+
+
+@api.route("/customers/<int:cid>/addresses", methods=["POST"])
+@permission_required("kyc.edit")
+def create_address(user, cid):
+    customer = _get_customer_for(user, cid)
+    body = request.get_json(silent=True) or {}
+    line1 = (body.get("line1") or "").strip()
+    if not line1:
+        raise APIException("line1 is required", status_code=400)
+    addr = party_service.add_address(
+        customer,
+        line1=line1, line2=body.get("line2"), city=body.get("city"),
+        postal_code=body.get("postal_code"), country=body.get("country"),
+        address_type=body.get("address_type", "RESIDENTIAL"),
+        actor=user,
+    )
+    return jsonify(addr.serialize()), 201
+
+
+@api.route("/parties/<int:pid>", methods=["GET"])
+@permission_required("customer.view")
+def get_party(user, pid):
+    party = Party.query.get(pid)
+    if party is None or party.organization_id != user.organization_id:
+        raise APIException("Party not found", status_code=404)
+    return jsonify(party.serialize()), 200
 
 
 # ---------------------------------------------------------------------------

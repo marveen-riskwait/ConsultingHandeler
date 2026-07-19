@@ -58,6 +58,30 @@ def compute_ubos(customer):
     return result
 
 
+def is_complex(customer):
+    """Complex ownership = at least one intermediate holding layer (an edge
+    whose target is not the root, or an organization among the owners), or an
+    unusually wide structure. Replaces the manual boolean with graph-derived truth."""
+    graph = build_graph(customer)
+    if not graph["root_id"]:
+        return False
+    root = graph["root_id"]
+    multi_level = any(e["owned_party_id"] != root for e in graph["edges"])
+    org_owners = any(n["kind"] == "ORGANIZATION" and n["id"] != root
+                     for n in graph["nodes"])
+    return multi_level or org_owners or len(graph["edges"]) > 3
+
+
+def directors_of(customer):
+    """Parties holding a DIRECTOR relationship to the customer's root party."""
+    if not customer.root_party_id:
+        return []
+    edges = (OwnershipRelationship.query
+             .filter_by(owned_party_id=customer.root_party_id,
+                        relationship_type="DIRECTOR", active=True).all())
+    return [Party.query.get(e.owner_party_id).serialize() for e in edges]
+
+
 def build_graph(customer):
     """Return {root_id, nodes, edges} for the customer's ownership structure."""
     root = customer.root_party_id

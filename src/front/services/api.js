@@ -40,6 +40,9 @@ export const api = {
   addDocument: (id, payload) => request(`/customers/${id}/documents`, { method: "POST", body: payload }),
   timeline: (id) => request(`/customers/${id}/timeline`),
   ownership: (id) => request(`/customers/${id}/ownership`),
+  addOwnership: (id, payload) => request(`/customers/${id}/ownership`, { method: "POST", body: payload }),
+  addresses: (id) => request(`/customers/${id}/addresses`),
+  addAddress: (id, payload) => request(`/customers/${id}/addresses`, { method: "POST", body: payload }),
   screening: (id) => request(`/customers/${id}/screening`),
   reviewMatch: (matchId, decision, reason) =>
     request(`/screening/matches/${matchId}/review`, { method: "POST", body: { decision, reason } }),

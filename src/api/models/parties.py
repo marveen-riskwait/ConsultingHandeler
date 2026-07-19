@@ -17,8 +17,11 @@ from api.models.base import db, utcnow
 PARTY_KINDS = ("PERSON", "ORGANIZATION")
 # How one party relates to the entity it points at.
 RELATIONSHIP_TYPES = ("SHAREHOLDER", "DIRECTOR", "UBO", "CONTROL", "AUTHORIZED_REP")
-# For control that is not (only) about share percentage.
-CONTROL_TYPES = ("VOTING_RIGHTS", "AGREEMENT", "MANAGEMENT", "OTHER")
+# For control that is not (only) about share percentage (per the document:
+# voting / management / contractual control on top of direct/indirect ownership).
+CONTROL_TYPES = ("VOTING_CONTROL", "MANAGEMENT_CONTROL", "CONTRACTUAL_CONTROL", "OTHER")
+
+ADDRESS_TYPES = ("RESIDENTIAL", "REGISTERED", "BUSINESS", "MAILING")
 
 # A person is a Ultimate Beneficial Owner at/above this effective ownership.
 UBO_THRESHOLD = 25.0
@@ -56,6 +59,10 @@ class Party(db.Model):
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
+    # Single-table polymorphism: `kind` discriminates Person / LegalEntity.
+    # No schema change — existing rows load as the right subclass.
+    __mapper_args__ = {"polymorphic_on": "kind", "polymorphic_identity": "PARTY"}
+
     def serialize(self):
         return {
             "id": self.id,
@@ -73,6 +80,53 @@ class Party(db.Model):
             "is_pep": self.is_pep,
             "pep_type": self.pep_type,
             "customer_id": self.customer_id,
+        }
+
+
+class Person(Party):
+    """A natural person — KYC subject, director, shareholder or UBO."""
+    __mapper_args__ = {"polymorphic_identity": "PERSON"}
+
+
+class LegalEntity(Party):
+    """A legal entity (company, trust, fund, ...) — KYB subject or owner."""
+    __mapper_args__ = {"polymorphic_identity": "ORGANIZATION"}
+
+
+class Address(db.Model):
+    """Party address with full history — the platform must always answer
+    "what was the address before, when did it change, who changed it?"."""
+    __tablename__ = "address"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organization.id"), nullable=False)
+    party_id: Mapped[int] = mapped_column(ForeignKey("party.id"), nullable=False)
+
+    address_type: Mapped[str] = mapped_column(String(20), default="RESIDENTIAL")
+    line1: Mapped[str] = mapped_column(String(200), nullable=False)
+    line2: Mapped[str] = mapped_column(String(200), nullable=True)
+    city: Mapped[str] = mapped_column(String(120), nullable=True)
+    postal_code: Mapped[str] = mapped_column(String(20), nullable=True)
+    country: Mapped[str] = mapped_column(String(80), nullable=True)
+
+    is_current: Mapped[bool] = mapped_column(Boolean, default=True)
+    valid_from: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    valid_to: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "party_id": self.party_id,
+            "address_type": self.address_type,
+            "line1": self.line1,
+            "line2": self.line2,
+            "city": self.city,
+            "postal_code": self.postal_code,
+            "country": self.country,
+            "is_current": self.is_current,
+            "valid_from": self.valid_from.isoformat() if self.valid_from else None,
+            "valid_to": self.valid_to.isoformat() if self.valid_to else None,
         }
 
 

@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../services/api";
+import useGlobalReducer from "../hooks/useGlobalReducer";
+import { can } from "../permissions/can";
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : "—");
 
@@ -38,14 +40,42 @@ const OwnershipTree = ({ nodeId, nodes, edges, factor = 1, depth = 0 }) => {
 
 export const Customer360 = () => {
   const { id } = useParams();
+  const { store } = useGlobalReducer();
   const [data, setData] = useState(null);
   const [graph, setGraph] = useState(null);
+  const [addresses, setAddresses] = useState([]);
   const [error, setError] = useState(null);
   const [screening, setScreening] = useState(false);
+  const [ownerForm, setOwnerForm] = useState({ owner_name: "", owner_kind: "PERSON", relationship_type: "SHAREHOLDER", percentage: "", country: "" });
+  const [addrForm, setAddrForm] = useState({ line1: "", city: "", country: "" });
 
   const load = useCallback(() => api.customer(id).then(setData).catch((e) => setError(e.message)), [id]);
+  const loadKyb = useCallback(() => {
+    api.ownership(id).then(setGraph).catch(() => setGraph(null));
+    api.addresses(id).then(setAddresses).catch(() => setAddresses([]));
+  }, [id]);
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { api.ownership(id).then(setGraph).catch(() => setGraph(null)); }, [id, screening]);
+  useEffect(() => { loadKyb(); }, [loadKyb, screening]);
+
+  const submitOwner = async (e) => {
+    e.preventDefault();
+    setError(null);
+    try {
+      await api.addOwnership(id, { ...ownerForm, percentage: Number(ownerForm.percentage) || 0 });
+      setOwnerForm({ owner_name: "", owner_kind: "PERSON", relationship_type: "SHAREHOLDER", percentage: "", country: "" });
+      await load(); loadKyb();
+    } catch (err) { setError(err.message); }
+  };
+
+  const submitAddress = async (e) => {
+    e.preventDefault();
+    setError(null);
+    try {
+      await api.addAddress(id, addrForm);
+      setAddrForm({ line1: "", city: "", country: "" });
+      await load(); loadKyb();
+    } catch (err) { setError(err.message); }
+  };
 
   const runScreening = async () => {
     setScreening(true);
@@ -231,11 +261,95 @@ export const Customer360 = () => {
                 ))}
               </div>
             )}
+            {graph && graph.directors && graph.directors.length > 0 && (
+              <div style={{ marginTop: ".5rem" }}>
+                <div className="muted" style={{ fontSize: ".78rem", marginBottom: ".2rem" }}>Directors</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: ".35rem" }}>
+                  {graph.directors.map((d) => (
+                    <span key={d.id} className="chip INFO"><i className="fa-solid fa-user-tie" /> {d.name}</span>
+                  ))}
+                </div>
+              </div>
+            )}
             {graph && graph.graph && graph.graph.root_id && (
               <div style={{ fontSize: ".9rem", marginTop: ".4rem" }}>
                 <div className="muted" style={{ fontSize: ".78rem", marginBottom: ".2rem" }}>Structure</div>
                 <OwnershipTree nodeId={graph.graph.root_id} nodes={graph.graph.nodes} edges={graph.graph.edges} />
               </div>
+            )}
+            {can(store.user, "kyb.edit") && (
+              <form onSubmit={submitOwner} className="row g-1 align-items-end" style={{ marginTop: ".75rem", borderTop: "1px solid var(--co-border)", paddingTop: ".6rem" }}>
+                <div className="col-4">
+                  <input className="form-control form-control-sm" placeholder="Name" required
+                    value={ownerForm.owner_name} onChange={(e) => setOwnerForm({ ...ownerForm, owner_name: e.target.value })} />
+                </div>
+                <div className="col-3">
+                  <select className="form-select form-select-sm" value={ownerForm.relationship_type}
+                    onChange={(e) => setOwnerForm({ ...ownerForm, relationship_type: e.target.value })}>
+                    <option value="SHAREHOLDER">Shareholder</option>
+                    <option value="DIRECTOR">Director</option>
+                    <option value="UBO">UBO</option>
+                    <option value="CONTROL">Control</option>
+                  </select>
+                </div>
+                <div className="col-2">
+                  <select className="form-select form-select-sm" value={ownerForm.owner_kind}
+                    onChange={(e) => setOwnerForm({ ...ownerForm, owner_kind: e.target.value })}>
+                    <option value="PERSON">Person</option>
+                    <option value="ORGANIZATION">Company</option>
+                  </select>
+                </div>
+                <div className="col-1">
+                  <input className="form-control form-control-sm" placeholder="%" type="number" min="0" max="100"
+                    value={ownerForm.percentage} onChange={(e) => setOwnerForm({ ...ownerForm, percentage: e.target.value })} />
+                </div>
+                <div className="col-2">
+                  <button className="btn btn-sm btn-co w-100">Add</button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Addresses — with history */}
+      <div className="row g-3 mt-0">
+        <div className="col-md-6">
+          <div className="co-card">
+            <div className="section-title">Addresses</div>
+            {addresses.length === 0 && <div className="muted" style={{ fontSize: ".88rem" }}>No address on file.</div>}
+            {addresses.map((a) => (
+              <div className="work-row" key={a.id}>
+                <span className={`dotsev ${a.is_current ? "LOW" : "INFO"}`} />
+                <div className="grow">
+                  <div className="title" style={a.is_current ? {} : { textDecoration: "line-through", opacity: 0.6 }}>
+                    {a.line1}{a.city ? `, ${a.city}` : ""}{a.country ? `, ${a.country}` : ""}
+                  </div>
+                  <div className="meta">
+                    {a.address_type} · {a.is_current ? "current" : `until ${fmt(a.valid_to)}`}
+                  </div>
+                </div>
+                {a.is_current && <span className="chip LOW">CURRENT</span>}
+              </div>
+            ))}
+            {can(store.user, "kyc.edit") && (
+              <form onSubmit={submitAddress} className="row g-1 align-items-end" style={{ marginTop: ".6rem", borderTop: "1px solid var(--co-border)", paddingTop: ".6rem" }}>
+                <div className="col-5">
+                  <input className="form-control form-control-sm" placeholder="Street" required
+                    value={addrForm.line1} onChange={(e) => setAddrForm({ ...addrForm, line1: e.target.value })} />
+                </div>
+                <div className="col-3">
+                  <input className="form-control form-control-sm" placeholder="City"
+                    value={addrForm.city} onChange={(e) => setAddrForm({ ...addrForm, city: e.target.value })} />
+                </div>
+                <div className="col-2">
+                  <input className="form-control form-control-sm" placeholder="Country"
+                    value={addrForm.country} onChange={(e) => setAddrForm({ ...addrForm, country: e.target.value })} />
+                </div>
+                <div className="col-2">
+                  <button className="btn btn-sm btn-co w-100">Add</button>
+                </div>
+              </form>
             )}
           </div>
         </div>

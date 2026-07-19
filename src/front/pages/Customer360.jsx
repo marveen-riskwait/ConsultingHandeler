@@ -44,18 +44,42 @@ export const Customer360 = () => {
   const [data, setData] = useState(null);
   const [graph, setGraph] = useState(null);
   const [addresses, setAddresses] = useState([]);
+  const [fields, setFields] = useState([]);
   const [error, setError] = useState(null);
   const [screening, setScreening] = useState(false);
   const [ownerForm, setOwnerForm] = useState({ owner_name: "", owner_kind: "PERSON", relationship_type: "SHAREHOLDER", percentage: "", country: "" });
   const [addrForm, setAddrForm] = useState({ line1: "", city: "", country: "" });
+  const [fieldForm, setFieldForm] = useState({ field_key: "", value: "", source: "manual" });
 
   const load = useCallback(() => api.customer(id).then(setData).catch((e) => setError(e.message)), [id]);
   const loadKyb = useCallback(() => {
     api.ownership(id).then(setGraph).catch(() => setGraph(null));
     api.addresses(id).then(setAddresses).catch(() => setAddresses([]));
+    api.fields(id).then(setFields).catch(() => setFields([]));
   }, [id]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadKyb(); }, [loadKyb, screening]);
+
+  const submitField = async (e) => {
+    e.preventDefault();
+    setError(null);
+    try {
+      await api.setField(id, fieldForm);
+      setFieldForm({ field_key: "", value: "", source: "manual" });
+      await load(); loadKyb();
+    } catch (err) { setError(err.message); }
+  };
+
+  const verifyField = async (fid) => {
+    try { await api.verifyField(id, fid); await load(); loadKyb(); }
+    catch (err) { setError(err.message); }
+  };
+
+  const requestInfo = async () => {
+    setError(null);
+    try { await api.requestInfo(id); await load(); }
+    catch (err) { setError(err.message); }
+  };
 
   const submitOwner = async (e) => {
     e.preventDefault();
@@ -95,7 +119,9 @@ export const Customer360 = () => {
   if (!data) return <div className="empty">Loading customer…</div>;
 
   const { customer, risk, open_cases, tasks, documents, recent_events,
-          changes_since_review, screening_matches = [], ubos = [] } = data;
+          changes_since_review, screening_matches = [], ubos = [],
+          completeness } = data;
+  const REQ_SEV = { VERIFIED: "LOW", RECEIVED: "MEDIUM", MISSING: "CRITICAL", WAIVED: "INFO" };
 
   return (
     <>
@@ -182,6 +208,34 @@ export const Customer360 = () => {
           </div>
         </div>
       </div>
+
+      {/* Compliance completeness — what's missing before the review */}
+      {completeness && (
+        <div className="co-card">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: ".4rem" }}>
+            <div className="section-title" style={{ marginBottom: 0 }}>
+              Compliance completeness — {completeness.completeness_pct}%
+              <span className="muted" style={{ fontWeight: 400 }}> ({completeness.satisfied}/{completeness.total})</span>
+            </div>
+            {completeness.missing_count > 0 && can(store.user, "kyc.review") && (
+              <button className="btn btn-sm btn-co" onClick={requestInfo}>
+                <i className="fa-solid fa-paper-plane" /> Request missing info
+              </button>
+            )}
+          </div>
+          <div style={{ background: "var(--co-border)", borderRadius: 6, height: 10, marginBottom: ".6rem" }}>
+            <div style={{ width: `${completeness.completeness_pct}%`, height: 10, borderRadius: 6,
+              background: completeness.completeness_pct >= 80 ? "var(--sev-low)" : completeness.completeness_pct >= 40 ? "var(--sev-medium)" : "var(--sev-high)" }} />
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: ".35rem" }}>
+            {completeness.requirements.map((r) => (
+              <span key={r.code} className={`chip ${REQ_SEV[r.status] || "INFO"}`} title={r.kind}>
+                {r.status === "VERIFIED" ? "✓" : r.status === "MISSING" ? "✗" : "•"} {r.label}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="row g-3 mt-0">
         <div className="col-md-6">
@@ -348,6 +402,50 @@ export const Customer360 = () => {
                 </div>
                 <div className="col-2">
                   <button className="btn btn-sm btn-co w-100">Add</button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+
+        {/* KYC data — with provenance */}
+        <div className="col-md-6">
+          <div className="co-card">
+            <div className="section-title">KYC data (provenance)</div>
+            {fields.length === 0 && <div className="muted" style={{ fontSize: ".88rem" }}>No fields captured.</div>}
+            {fields.map((f) => (
+              <div className="work-row" key={f.id}>
+                <span className={`dotsev ${f.verified ? "LOW" : "MEDIUM"}`} />
+                <div className="grow">
+                  <div className="title">{f.field_key}: {f.value || "—"}</div>
+                  <div className="meta">
+                    source: {f.source}{f.confidence != null ? ` · conf ${Math.round(f.confidence * 100)}%` : ""}
+                    {f.verified ? " · verified" : ""}
+                  </div>
+                </div>
+                {f.verified
+                  ? <span className="chip LOW">✓ verified</span>
+                  : can(store.user, "kyc.approve")
+                    ? <button className="btn btn-sm btn-outline-success" onClick={() => verifyField(f.id)}>Verify</button>
+                    : <span className="chip MEDIUM">unverified</span>}
+              </div>
+            ))}
+            {can(store.user, "kyc.edit") && (
+              <form onSubmit={submitField} className="row g-1 align-items-end" style={{ marginTop: ".6rem", borderTop: "1px solid var(--co-border)", paddingTop: ".6rem" }}>
+                <div className="col-4">
+                  <input className="form-control form-control-sm" placeholder="field_key" required
+                    value={fieldForm.field_key} onChange={(e) => setFieldForm({ ...fieldForm, field_key: e.target.value })} />
+                </div>
+                <div className="col-4">
+                  <input className="form-control form-control-sm" placeholder="value"
+                    value={fieldForm.value} onChange={(e) => setFieldForm({ ...fieldForm, value: e.target.value })} />
+                </div>
+                <div className="col-2">
+                  <input className="form-control form-control-sm" placeholder="source"
+                    value={fieldForm.source} onChange={(e) => setFieldForm({ ...fieldForm, source: e.target.value })} />
+                </div>
+                <div className="col-2">
+                  <button className="btn btn-sm btn-co w-100">Set</button>
                 </div>
               </form>
             )}

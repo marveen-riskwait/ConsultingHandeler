@@ -17,6 +17,7 @@ from api.models import (
     ScreeningRun, ScreeningMatch,
     Department, Team, OrganizationMembership, TeamMembership, AccessPolicy,
     Invitation, AssignmentRule, SLAConfiguration,
+    ProfileField, RequirementDefinition, RequirementInstance,
     utcnow, ROLES, CUSTOMER_TYPES, PARTY_KINDS, PERMISSION_CATALOG,
 )
 from api.utils import APIException
@@ -25,7 +26,8 @@ from api.auth import (
     login_required, role_required, permission_required, has_permission,
 )
 from api.engine import (risk_engine, audit, ownership, data_scope, workload,
-                        sla, assignment, party_service)
+                        sla, assignment, party_service, requirement_engine,
+                        kyc_service)
 from api.engine.screening_service import review_match
 from api.tasks import run_screening
 
@@ -199,6 +201,7 @@ def customer_overview(user, cid):
     matches = (ScreeningMatch.query.filter_by(customer_id=cid)
                .order_by(ScreeningMatch.first_detected_at.desc()).all())
     ubos = ownership.compute_ubos(customer)
+    completeness = requirement_engine.summary(customer)
 
     return jsonify({
         "customer": customer.serialize(),
@@ -208,6 +211,7 @@ def customer_overview(user, cid):
         "documents": [d.serialize() for d in documents],
         "screening_matches": [m.serialize() for m in matches],
         "ubos": ubos,
+        "completeness": completeness,
         "recent_events": [e.serialize() for e in events],
         "changes_since_review": [e.serialize() for e in changes],
         "last_review_at": since.isoformat() if since else None,
@@ -350,6 +354,59 @@ def get_party(user, pid):
     if party is None or party.organization_id != user.organization_id:
         raise APIException("Party not found", status_code=404)
     return jsonify(party.serialize()), 200
+
+
+# ---------------------------------------------------------------------------
+# KYC data (field provenance) & Requirement engine
+# ---------------------------------------------------------------------------
+@api.route("/customers/<int:cid>/fields", methods=["GET"])
+@permission_required("kyc.view")
+def list_fields(user, cid):
+    customer = _get_customer_for(user, cid)
+    fields = (ProfileField.query.filter_by(customer_id=cid)
+              .order_by(ProfileField.category, ProfileField.field_key).all())
+    return jsonify([f.serialize() for f in fields]), 200
+
+
+@api.route("/customers/<int:cid>/fields", methods=["POST"])
+@permission_required("kyc.edit")
+def set_field(user, cid):
+    customer = _get_customer_for(user, cid)
+    body = request.get_json(silent=True) or {}
+    field_key = (body.get("field_key") or "").strip()
+    if not field_key:
+        raise APIException("field_key is required", status_code=400)
+    field = kyc_service.set_field(
+        customer, field_key, body.get("value"),
+        category=body.get("category"), source=body.get("source", "manual"),
+        confidence=body.get("confidence"), actor=user)
+    return jsonify(field.serialize()), 201
+
+
+@api.route("/customers/<int:cid>/fields/<int:fid>/verify", methods=["POST"])
+@permission_required("kyc.approve")
+def verify_field(user, cid, fid):
+    customer = _get_customer_for(user, cid)
+    field = ProfileField.query.get(fid)
+    if field is None or field.customer_id != cid:
+        raise APIException("Field not found", status_code=404)
+    kyc_service.verify_field(field, user)
+    return jsonify(field.serialize()), 200
+
+
+@api.route("/customers/<int:cid>/requirements", methods=["GET"])
+@permission_required("customer.view")
+def customer_requirements(user, cid):
+    customer = _get_customer_for(user, cid)
+    return jsonify(requirement_engine.summary(customer)), 200
+
+
+@api.route("/customers/<int:cid>/request-info", methods=["POST"])
+@permission_required("kyc.review")
+def request_info(user, cid):
+    customer = _get_customer_for(user, cid)
+    result = requirement_engine.request_missing_info(customer, actor=user)
+    return jsonify(result), 202
 
 
 # ---------------------------------------------------------------------------

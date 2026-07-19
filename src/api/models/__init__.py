@@ -25,6 +25,10 @@ from api.models.invitations import Invitation, INVITATION_STATUSES
 from api.models.management import (
     AssignmentRule, SLAConfiguration, ASSIGNMENT_STRATEGIES,
 )
+from api.models.kyc import (
+    ProfileField, RequirementDefinition, RequirementInstance,
+    FIELD_CATEGORIES, REQUIREMENT_KINDS, REQUIREMENT_STATUSES, RISK_RANK,
+)
 from api.models.customer import (
     Customer, Document, RiskAssessment,
     CUSTOMER_TYPES, RISK_LEVELS, HIGH_RISK_COUNTRIES, HIGH_RISK_ACTIVITIES,
@@ -51,6 +55,8 @@ __all__ = [
     "MEMBERSHIP_STATUSES", "TEAM_ROLES", "SCOPE_TYPES",
     "Invitation", "INVITATION_STATUSES",
     "AssignmentRule", "SLAConfiguration", "ASSIGNMENT_STRATEGIES",
+    "ProfileField", "RequirementDefinition", "RequirementInstance",
+    "FIELD_CATEGORIES", "REQUIREMENT_KINDS", "REQUIREMENT_STATUSES", "RISK_RANK",
     "Customer", "Document", "RiskAssessment",
     "CUSTOMER_TYPES", "RISK_LEVELS", "HIGH_RISK_COUNTRIES", "HIGH_RISK_ACTIVITIES",
     "Party", "Person", "LegalEntity", "Address", "OwnershipRelationship",

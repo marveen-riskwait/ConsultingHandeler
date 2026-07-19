@@ -179,6 +179,21 @@ The project remains runnable after every phase.
   /customers/:id/addresses, GET /parties/:id; Customer 360 gains an Add-owner
   KYB form (relationship + kind + %), a Directors list, and an Addresses card
   with history — permission-gated (kyb.edit / kyc.edit).
-- **Next: Phase E — KYC/KYB + Requirement Engine** (field provenance,
-  required-info / missing-info detection, document requirements) then Phase F
-  (provider integration layer + webhooks).
+- **Phase E (KYC/KYB + Requirement Engine)** — shipped: **ProfileField** with
+  full provenance (value / source / verified / verified_by / confidence /
+  last_changed_at; value change re-opens verification, trusted high-confidence
+  source auto-verifies); data-driven **RequirementDefinition** (kind, customer
+  type, min risk rank, jurisdiction, mapped data_field / doc_type) + per-customer
+  **RequirementInstance**; `engine/requirement_engine.py` computes applicable
+  requirements by profile, RECEIVED/VERIFIED/MISSING status, **completeness %**,
+  and `request_missing_info()` (task per missing + notification +
+  MISSING_INFORMATION_DETECTED event); `engine/kyc_service.py` (set/verify field,
+  audited). Endpoints: GET/POST /customers/:id/fields,
+  /fields/:fid/verify, GET /customers/:id/requirements,
+  POST /customers/:id/request-info; overview now carries `completeness`.
+  Customer 360 gains a Compliance-completeness bar with per-requirement chips +
+  "Request missing info", and a KYC-data (provenance) card with Verify.
+  12 system requirement definitions seeded (EDD pulled in at HIGH+ risk).
+- **Next: Phase F — Provider Integration Layer** (registry, configuration,
+  credentials, adapters ready for Sumsub/Trulioo/ComplyAdvantage, normalization,
+  webhooks with signature + idempotency), keeping MockProvider.

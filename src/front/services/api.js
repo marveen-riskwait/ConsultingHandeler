@@ -43,6 +43,11 @@ export const api = {
   addOwnership: (id, payload) => request(`/customers/${id}/ownership`, { method: "POST", body: payload }),
   addresses: (id) => request(`/customers/${id}/addresses`),
   addAddress: (id, payload) => request(`/customers/${id}/addresses`, { method: "POST", body: payload }),
+  fields: (id) => request(`/customers/${id}/fields`),
+  setField: (id, payload) => request(`/customers/${id}/fields`, { method: "POST", body: payload }),
+  verifyField: (id, fid) => request(`/customers/${id}/fields/${fid}/verify`, { method: "POST" }),
+  requirements: (id) => request(`/customers/${id}/requirements`),
+  requestInfo: (id) => request(`/customers/${id}/request-info`, { method: "POST" }),
   screening: (id) => request(`/customers/${id}/screening`),
   reviewMatch: (matchId, decision, reason) =>
     request(`/screening/matches/${matchId}/review`, { method: "POST", body: { decision, reason } }),

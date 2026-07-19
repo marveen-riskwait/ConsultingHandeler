@@ -4,7 +4,7 @@ from api.models import (
     db, Organization, User, Customer, ComplianceRule,
     Party, OwnershipRelationship,
     Department, Team, OrganizationMembership, TeamMembership,
-    AssignmentRule, SLAConfiguration,
+    AssignmentRule, SLAConfiguration, RequirementDefinition,
 )
 from api.auth import hash_password
 
@@ -185,6 +185,40 @@ def _seed_org_structure(org):
     db.session.commit()
 
 
+# System-level requirement definitions (organization_id = NULL).
+# min_risk_rank: 0=always, 2=HIGH and above (EDD).
+DEFAULT_REQUIREMENTS = [
+    # Individuals
+    ("IDENTITY_DOCUMENT", "Identity document", "DOCUMENT", "INDIVIDUAL", 0, None, "PASSPORT"),
+    ("PROOF_OF_ADDRESS", "Proof of address", "DOCUMENT", "INDIVIDUAL", 0, None, "PROOF_OF_ADDRESS"),
+    ("DATE_OF_BIRTH", "Date of birth", "DATA", "INDIVIDUAL", 0, "date_of_birth", None),
+    ("NATIONALITY", "Nationality", "DATA", "INDIVIDUAL", 0, "nationality", None),
+    ("OCCUPATION", "Occupation", "DATA", "INDIVIDUAL", 0, "occupation", None),
+    # Companies
+    ("CERTIFICATE_OF_INCORPORATION", "Certificate of incorporation", "DOCUMENT", "COMPANY", 0, None, "CERTIFICATE_OF_INCORPORATION"),
+    ("ARTICLES_OF_ASSOCIATION", "Articles of association", "DOCUMENT", "COMPANY", 0, None, "ARTICLES_OF_ASSOCIATION"),
+    ("REGISTRATION_NUMBER", "Registration number", "DATA", "COMPANY", 0, "registration_number", None),
+    ("BUSINESS_ACTIVITY", "Business activity", "DATA", "COMPANY", 0, "business_activity", None),
+    # Any customer
+    ("PURPOSE_OF_RELATIONSHIP", "Purpose of relationship", "DATA", "ANY", 0, "purpose_of_relationship", None),
+    # Enhanced Due Diligence (HIGH risk and above)
+    ("SOURCE_OF_FUNDS", "Source of funds", "DATA", "ANY", 2, "source_of_funds", None),
+    ("SOURCE_OF_WEALTH", "Source of wealth", "DATA", "ANY", 2, "source_of_wealth", None),
+]
+
+
+def _seed_requirement_definitions():
+    for code, label, kind, ctype, rank, data_field, doc_type in DEFAULT_REQUIREMENTS:
+        exists = (RequirementDefinition.query
+                  .filter_by(code=code, organization_id=None).first())
+        if not exists:
+            db.session.add(RequirementDefinition(
+                organization_id=None, code=code, label=label, kind=kind,
+                applies_customer_type=ctype, min_risk_rank=rank,
+                data_field=data_field, doc_type=doc_type))
+    db.session.commit()
+
+
 def _seed_management(org):
     """Default SLA targets + assignment rules for the demo org (idempotent)."""
     for priority, hours in (("CRITICAL", 24), ("HIGH", 72),
@@ -272,6 +306,10 @@ def setup_commands(app):
         # RBAC first: permissions + system roles.
         sync_roles()
         click.echo("RBAC ready (permissions + roles).")
+
+        _seed_requirement_definitions()
+        click.echo(f"Requirement definitions ready: "
+                   f"{RequirementDefinition.query.count()}")
 
         # Rules (global, idempotent by name).
         for spec in DEFAULT_RULES:

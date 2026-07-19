@@ -13,6 +13,7 @@ import { Administration } from "./pages/Administration";
 import { Management } from "./pages/Management";
 import { Alerts } from "./pages/Alerts";
 import { Regulatory } from "./pages/Regulatory";
+import { Audit } from "./pages/Audit";
 
 export const router = createBrowserRouter(
   createRoutesFromElements(
@@ -22,6 +23,7 @@ export const router = createBrowserRouter(
       <Route path="/customers/:id" element={<Customer360 />} />
       <Route path="/alerts" element={<Alerts />} />
       <Route path="/regulatory" element={<Regulatory />} />
+      <Route path="/audit" element={<Audit />} />
       <Route path="/cases/:id" element={<CaseDetail />} />
       <Route path="/administration" element={<Administration />} />
       <Route path="/management" element={<Management />} />

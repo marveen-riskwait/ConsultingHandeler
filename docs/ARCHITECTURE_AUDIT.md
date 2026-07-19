@@ -263,5 +263,22 @@ The project remains runnable after every phase.
   the real software modules, and one sample HIGH-impact change. Also fixed
   org-wide notifications (customer-less events now notify by the payload's
   organization via recipients_for_org, which also matches additional roles).
-- **Next: Phase G5** — audit hardening (richer audit metadata / evidence) and an
-  automated pytest suite across auth, RBAC/ABAC, the engines and providers.
+- **Phase G5 (Audit hardening + tests)** — shipped: AuditEvent enriched with
+  organization_id, ip_address and structured `context` metadata, captured
+  automatically from the actor and the Flask request; `/audit` is now
+  tenant-scoped and filterable; Audit Explorer page (the Auditor workspace) with
+  entity/action filters showing WHO / WHAT / WHEN / WHERE(IP) / OLD→NEW / WHY.
+  Automated **pytest suite** (`tests/`, 23 tests) covering auth & JWT, RBAC
+  (grant/deny, admin ≠ compliance operator), tenant isolation / ABAC, the
+  compliance engines (screening → case/alert/risk, false-positive history,
+  risk-driven EDD requirements, missing-info requests), the workflow approval
+  gate, and provider webhook signature/idempotency + credential secrecy. A
+  `customer=None` bug in the rules engine (CREATE_TASK/CASE on customer-less
+  provider events) was found by these tests and fixed.
+
+**The document's full roadmap (Phases A–G5) is implemented.** The platform is a
+rules-driven, event-driven, auditable, multi-tenant Compliance Operations
+Platform with KYC/KYB + UBO, provider orchestration, configurable risk/reviews/
+workflows, alerting, continuous monitoring, regulatory intelligence and a
+hardened audit trail — verified end-to-end (unit + browser) and covered by an
+automated test suite. Remaining work is polish/hardening, not new roadmap scope.

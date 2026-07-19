@@ -70,6 +70,10 @@ export const api = {
   notifications: () => request("/notifications"),
   readNotification: (id) => request(`/notifications/${id}/read`, { method: "POST" }),
   rules: () => request("/rules"),
+  audit: (params = {}) => {
+    const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return request(`/audit${q ? `?${q}` : ""}`);
+  },
 
   // alerts & reviews
   alerts: (status) => request(`/alerts${status ? `?status=${status}` : ""}`),

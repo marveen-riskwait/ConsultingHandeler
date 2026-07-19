@@ -1,7 +1,7 @@
 """Audit — immutable event history: WHO / WHAT / WHEN / OLD / NEW / WHY."""
 from datetime import datetime
 
-from sqlalchemy import String, Integer, DateTime, ForeignKey, Text
+from sqlalchemy import String, Integer, DateTime, ForeignKey, Text, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.models.base import db, utcnow
@@ -11,6 +11,7 @@ class AuditEvent(db.Model):
     __tablename__ = "audit_event"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organization.id"), nullable=True)
     actor_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=True)
     actor_label: Mapped[str] = mapped_column(String(120), default="system")
 
@@ -21,11 +22,16 @@ class AuditEvent(db.Model):
     old_value: Mapped[str] = mapped_column(Text, nullable=True)
     new_value: Mapped[str] = mapped_column(Text, nullable=True)
     reason: Mapped[str] = mapped_column(Text, nullable=True)
+    # `context` = structured metadata (renamed off the reserved word "metadata");
+    # ip_address + organization stamp the WHERE of every action.
+    context: Mapped[dict] = mapped_column(JSON, nullable=True)
+    ip_address: Mapped[str] = mapped_column(String(60), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     def serialize(self):
         return {
             "id": self.id,
+            "organization_id": self.organization_id,
             "actor_id": self.actor_id,
             "actor_label": self.actor_label,
             "entity_type": self.entity_type,
@@ -34,5 +40,7 @@ class AuditEvent(db.Model):
             "old_value": self.old_value,
             "new_value": self.new_value,
             "reason": self.reason,
+            "metadata": self.context or {},
+            "ip_address": self.ip_address,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }

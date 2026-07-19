@@ -686,14 +686,20 @@ def list_rules(user):
 @api.route("/audit", methods=["GET"])
 @permission_required("audit.view")
 def list_audit(user):
-    q = AuditEvent.query
+    # Tenant isolation: an org sees its own entries + system-generated ones.
+    q = AuditEvent.query.filter(
+        (AuditEvent.organization_id == user.organization_id) |
+        (AuditEvent.organization_id.is_(None)))
     et = request.args.get("entity_type")
     eid = request.args.get("entity_id")
+    action = request.args.get("action")
     if et:
         q = q.filter(AuditEvent.entity_type == et)
     if eid:
         q = q.filter(AuditEvent.entity_id == int(eid))
-    entries = q.order_by(AuditEvent.created_at.desc()).limit(100).all()
+    if action:
+        q = q.filter(AuditEvent.action.like(f"%{action}%"))
+    entries = q.order_by(AuditEvent.created_at.desc()).limit(200).all()
     return jsonify([a.serialize() for a in entries]), 200
 
 

@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { to: "/alerts", icon: "fa-triangle-exclamation", label: "Alerts", permission: "case.view" },
   { to: "/management", icon: "fa-chart-line", label: "Management", permission: "management.view" },
   { to: "/regulatory", icon: "fa-scale-balanced", label: "Regulatory", permission: "regulatory.view" },
+  { to: "/audit", icon: "fa-clipboard-list", label: "Audit", permission: "audit.view" },
   { to: "/administration", icon: "fa-gear", label: "Admin", permission: "user.view" },
 ];
 

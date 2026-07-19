@@ -51,6 +51,8 @@ def _run_action(action, *, customer, event, created_case):
     atype = action.get("type")
 
     if atype == "CREATE_CASE":
+        if customer is None:
+            return created_case   # a case must belong to a customer
         case = Case(
             customer_id=customer.id,
             case_type=action.get("case_type", event.event_type),
@@ -74,7 +76,7 @@ def _run_action(action, *, customer, event, created_case):
 
     if atype == "CREATE_TASK":
         task = Task(
-            customer_id=customer.id,
+            customer_id=customer.id if customer else None,
             case_id=created_case.id if created_case else None,
             task_type=action.get("task_type", "REVIEW"),
             title=action.get("title", "Compliance task"),

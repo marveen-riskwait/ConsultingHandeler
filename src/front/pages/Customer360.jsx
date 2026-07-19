@@ -158,6 +158,9 @@ export const Customer360 = () => {
             <div style={{ display: "flex", alignItems: "baseline", gap: ".6rem" }}>
               <span className="risk-badge">{customer.risk_score}<small> / 100</small></span>
               <span className={`chip ${customer.risk_level}`}>{customer.risk_level}</span>
+              {risk && risk.methodology_version && (
+                <span className="muted" style={{ fontSize: ".72rem" }}>methodology {risk.methodology_version}</span>
+              )}
             </div>
 
             {risk && risk.factors && risk.factors.length > 0 ? (

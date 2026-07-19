@@ -20,6 +20,7 @@ from api.models import (
     ProfileField, RequirementDefinition, RequirementInstance,
     Provider, ProviderCredential, NormalizedComplianceResult, WebhookEvent,
     PROVIDER_TYPES, ComplianceAlert, Review, REVIEW_TYPES,
+    RiskMethodology,
     utcnow, ROLES, CUSTOMER_TYPES, PARTY_KINDS, PERMISSION_CATALOG,
 )
 from api.utils import APIException
@@ -1405,6 +1406,23 @@ def complete_review(user, review_id):
         raise APIException("A reason is required", status_code=400)
     review, nxt = review_engine.complete_review(review, decision, reason, actor=user)
     return jsonify({"review": review.serialize(), "next": nxt.serialize()}), 200
+
+
+@api.route("/risk/methodologies", methods=["GET"])
+@permission_required("risk.view")
+def list_risk_methodologies(user):
+    meths = (RiskMethodology.query
+             .filter((RiskMethodology.organization_id == user.organization_id) |
+                     (RiskMethodology.organization_id.is_(None)))
+             .order_by(RiskMethodology.version).all())
+    return jsonify([m.serialize(deep=True) for m in meths]), 200
+
+
+@api.route("/risk/methodologies/active", methods=["GET"])
+@permission_required("risk.view")
+def active_risk_methodology(user):
+    meth = risk_engine.active_methodology(user.organization_id)
+    return jsonify(meth.serialize(deep=True) if meth else None), 200
 
 
 @api.route("/monitoring/run", methods=["POST"])

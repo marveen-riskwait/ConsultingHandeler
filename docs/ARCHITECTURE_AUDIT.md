@@ -226,6 +226,15 @@ The project remains runnable after every phase.
   /reviews/:id/start|complete, /monitoring/run; overview carries reviews +
   open_alerts. Frontend: Alert Center page (severity counters, assign/resolve),
   Reviews + Open-alerts cards in Customer 360.
-- **Next: Phase G2** — data-driven Risk (RiskMethodology/Factor/Rule/Threshold,
-  versioned), Workflow engine (Definition/Instance/Step/Transition/Approval),
-  Regulatory Intelligence, audit hardening + automated test suite.
+- **Phase G2 (Data-driven Risk)** — shipped: RiskMethodology (versioned,
+  org-over-system, active) + RiskFactor (code, label, impact, condition
+  FLAG/COUNTRY_IN/ACTIVITY_IN) + RiskThreshold (level bands); risk_engine
+  refactored to evaluate the active methodology from the DB (legacy hardcoded
+  set kept only as a fallback), storing each RiskAssessment's methodology
+  version so history stays interpretable. Editing a factor's impact changes
+  future scores with no code change; an org methodology overrides the system
+  one. Endpoints GET /risk/methodologies(/active); admin Risk-Model tab (factor
+  table + thresholds); methodology version surfaced on the Customer 360 risk
+  card. `risk.view` added to admin roles (they configure the risk model).
+- **Next: Phase G3** — Workflow engine (Definition/Instance/Step/Transition/
+  Approval), Regulatory Intelligence, audit hardening + automated pytest suite.

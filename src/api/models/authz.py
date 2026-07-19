@@ -136,6 +136,7 @@ _ADMIN_CORE = [
     "department.view", "department.create", "department.update",
     "team.view", "team.create", "team.update", "team.manage_members",
     "customer.view",
+    "risk.view",
     "workflow.view", "workflow.configure",
     "rule.view", "rule.create", "rule.update", "rule.activate",
     "regulatory.view",

@@ -90,6 +90,7 @@ export const api = {
   createDepartment: (payload) => request("/departments", { method: "POST", body: payload }),
   roles: () => request("/roles"),
   permissionsCatalog: () => request("/permissions"),
+  riskMethodologies: () => request("/risk/methodologies"),
   // management
   managementDashboard: () => request("/management/dashboard"),
   managementWorkload: () => request("/management/workload"),

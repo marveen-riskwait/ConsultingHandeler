@@ -236,6 +236,39 @@ DEFAULT_REQUIREMENTS = [
 ]
 
 
+def _seed_risk_methodology():
+    """Default system risk methodology v1 — mirrors the legacy hardcoded model,
+    now data-driven and editable."""
+    from api.models import (RiskMethodology, RiskFactor, RiskThreshold,
+                            HIGH_RISK_COUNTRIES, HIGH_RISK_ACTIVITIES)
+    if RiskMethodology.query.filter_by(organization_id=None, version="v1").first():
+        return
+    meth = RiskMethodology(organization_id=None, version="v1",
+                           name="Standard Methodology v1", active=True)
+    db.session.add(meth)
+    db.session.flush()
+
+    factors = [
+        ("PEP", "Politically Exposed Person detected", 30, "FLAG", {"field": "is_pep"}),
+        ("SANCTIONS", "Potential sanctions match", 40, "FLAG", {"field": "has_sanctions_match"}),
+        ("ADVERSE_MEDIA", "Relevant adverse media", 20, "FLAG", {"field": "has_adverse_media"}),
+        ("OWNERSHIP", "Complex ownership structure", 15, "FLAG", {"field": "complex_ownership"}),
+        ("GEOGRAPHY", "High-risk jurisdiction", 20, "COUNTRY_IN",
+         {"values": sorted(HIGH_RISK_COUNTRIES)}),
+        ("BUSINESS", "High-risk business activity", 25, "ACTIVITY_IN",
+         {"values": sorted(HIGH_RISK_ACTIVITIES)}),
+    ]
+    for code, label, impact, ctype, cval in factors:
+        db.session.add(RiskFactor(methodology_id=meth.id, code=code, label=label,
+                                  impact=impact, condition_type=ctype,
+                                  condition_value=cval))
+    for level, lo, hi in [("LOW", 0, 30), ("MEDIUM", 31, 70),
+                          ("HIGH", 71, 100), ("CRITICAL", 101, None)]:
+        db.session.add(RiskThreshold(methodology_id=meth.id, level=level,
+                                     min_score=lo, max_score=hi))
+    db.session.commit()
+
+
 def _seed_requirement_definitions():
     for code, label, kind, ctype, rank, data_field, doc_type in DEFAULT_REQUIREMENTS:
         exists = (RequirementDefinition.query
@@ -360,6 +393,9 @@ def setup_commands(app):
         _seed_requirement_definitions()
         click.echo(f"Requirement definitions ready: "
                    f"{RequirementDefinition.query.count()}")
+
+        _seed_risk_methodology()
+        click.echo("Risk methodology v1 seeded (6 factors + 4 thresholds).")
 
         # Rules (global, idempotent by name).
         for spec in DEFAULT_RULES:

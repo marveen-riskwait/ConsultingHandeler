@@ -411,6 +411,57 @@ const IntegrationsTab = ({ me }) => {
   );
 };
 
+// ------------------------------------------------------- Risk Model tab
+const RiskModelTab = () => {
+  const [meths, setMeths] = useState([]);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    api.riskMethodologies().then(setMeths).catch((e) => setError(e.message));
+  }, []);
+  const CT = { FLAG: "flag", COUNTRY_IN: "country in list", ACTIVITY_IN: "activity in list" };
+  return (
+    <>
+      {error && <div className="alert alert-danger py-2">{error}</div>}
+      {meths.length === 0 && <div className="empty">No risk methodology configured.</div>}
+      {meths.map((m) => (
+        <div className="co-card" key={m.id}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div className="section-title" style={{ marginBottom: 0 }}>
+              {m.name} <span className="muted" style={{ fontWeight: 400 }}>· version {m.version}</span>
+            </div>
+            <span className={`chip ${m.active ? "LOW" : "INFO"}`}>
+              {m.active ? "ACTIVE" : "inactive"}{m.organization_id ? " · org" : " · system"}
+            </span>
+          </div>
+          <div style={{ overflowX: "auto", marginTop: ".5rem" }}>
+            <table className="table table-sm align-middle" style={{ fontSize: ".9rem" }}>
+              <thead><tr className="muted"><th>Factor</th><th>Condition</th><th style={{ textAlign: "right" }}>Impact</th></tr></thead>
+              <tbody>
+                {m.factors.map((f) => (
+                  <tr key={f.id}>
+                    <td><b>{f.code}</b> <span className="muted">· {f.label}</span></td>
+                    <td className="muted">{CT[f.condition_type] || f.condition_type}
+                      {f.condition_value.field ? `: ${f.condition_value.field}` : ""}
+                      {f.condition_value.values ? `: ${f.condition_value.values.join(", ")}` : ""}</td>
+                    <td style={{ textAlign: "right", color: "var(--sev-high)", fontWeight: 700 }}>+{f.impact}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: ".35rem" }}>
+            {m.thresholds.map((t) => (
+              <span key={t.id} className={`chip ${t.level}`}>
+                {t.level}: {t.min_score}{t.max_score != null ? `–${t.max_score}` : "+"}
+              </span>
+            ))}
+          </div>
+        </div>
+      ))}
+    </>
+  );
+};
+
 // ------------------------------------------------------- Organization tab
 const OrganizationTab = ({ me }) => {
   const [data, setData] = useState(null);
@@ -456,6 +507,7 @@ export const Administration = () => {
     { key: "users", label: "Users", icon: "fa-user-group", permission: "user.view" },
     { key: "teams", label: "Teams & Departments", icon: "fa-sitemap", permission: "team.view" },
     { key: "roles", label: "Roles & Permissions", icon: "fa-shield-halved", permission: "role.view" },
+    { key: "risk", label: "Risk Model", icon: "fa-gauge-high", permission: "risk.view" },
     { key: "integrations", label: "Integrations", icon: "fa-plug", permission: "organization.view" },
     { key: "organization", label: "Organization", icon: "fa-building", permission: "organization.view" },
   ].filter((t) => can(me, t.permission));
@@ -480,6 +532,7 @@ export const Administration = () => {
       {tab === "users" && <UsersTab me={me} />}
       {tab === "teams" && <TeamsTab me={me} />}
       {tab === "roles" && <RolesTab />}
+      {tab === "risk" && <RiskModelTab />}
       {tab === "integrations" && <IntegrationsTab me={me} />}
       {tab === "organization" && <OrganizationTab me={me} />}
     </>

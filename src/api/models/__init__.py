@@ -29,6 +29,11 @@ from api.models.kyc import (
     ProfileField, RequirementDefinition, RequirementInstance,
     FIELD_CATEGORIES, REQUIREMENT_KINDS, REQUIREMENT_STATUSES, RISK_RANK,
 )
+from api.models.providers import (
+    Provider, ProviderCredential, ProviderHealthStatus,
+    RawProviderResponse, NormalizedComplianceResult, WebhookEvent,
+    PROVIDER_TYPES, HEALTH_STATUSES,
+)
 from api.models.customer import (
     Customer, Document, RiskAssessment,
     CUSTOMER_TYPES, RISK_LEVELS, HIGH_RISK_COUNTRIES, HIGH_RISK_ACTIVITIES,
@@ -57,6 +62,9 @@ __all__ = [
     "AssignmentRule", "SLAConfiguration", "ASSIGNMENT_STRATEGIES",
     "ProfileField", "RequirementDefinition", "RequirementInstance",
     "FIELD_CATEGORIES", "REQUIREMENT_KINDS", "REQUIREMENT_STATUSES", "RISK_RANK",
+    "Provider", "ProviderCredential", "ProviderHealthStatus",
+    "RawProviderResponse", "NormalizedComplianceResult", "WebhookEvent",
+    "PROVIDER_TYPES", "HEALTH_STATUSES",
     "Customer", "Document", "RiskAssessment",
     "CUSTOMER_TYPES", "RISK_LEVELS", "HIGH_RISK_COUNTRIES", "HIGH_RISK_ACTIVITIES",
     "Party", "Person", "LegalEntity", "Address", "OwnershipRelationship",

@@ -194,6 +194,24 @@ The project remains runnable after every phase.
   Customer 360 gains a Compliance-completeness bar with per-requirement chips +
   "Request missing info", and a KYC-data (provenance) card with Verify.
   12 system requirement definitions seeded (EDD pulled in at HIGH+ risk).
-- **Next: Phase F — Provider Integration Layer** (registry, configuration,
-  credentials, adapters ready for Sumsub/Trulioo/ComplyAdvantage, normalization,
-  webhooks with signature + idempotency), keeping MockProvider.
+- **Phase F (Provider Integration Layer)** — shipped: Provider /
+  ProviderCredential (secrets never serialized) / ProviderHealthStatus /
+  RawProviderResponse / NormalizedComplianceResult / WebhookEvent models;
+  `integrations/providers` adapter interfaces (KYC/KYB/AML) + registry with a
+  working MockProvider and prepared Sumsub/Trulioo/ComplyAdvantage stubs (they
+  raise on live use without credentials, never invent data); normalization into
+  a provider-agnostic NormalizedResult; `engine/provider_service.py` for
+  verification (-> RawProviderResponse + NormalizedComplianceResult +
+  PROVIDER_STATUS_CHANGED event -> rules), health checks, and the secure webhook
+  pipeline (HMAC-SHA256 signature verified BEFORE idempotency so a rejected
+  request can't consume the event id; idempotent replays; normalize -> event ->
+  rules; failures logged on WebhookEvent, never silently ignored). Public
+  endpoint POST /api/webhooks/providers/:provider; admin endpoints /providers
+  (+credentials, +health), /webhook-events; POST /customers/:id/verify. Seed:
+  Mock Identity (KYC, webhook secret) + Sumsub/ComplyAdvantage stubs; two
+  PROVIDER_STATUS_CHANGED rules (FAILED -> remediation task, MATCH -> case).
+  Admin Integrations tab (providers, health, credential form that never shows
+  secrets, webhook event log).
+- **Next: Phase G** — data-driven Risk (RiskMethodology/Factor/Rule), Review &
+  Workflow engines, Alert Center (vs Notification), continuous monitoring
+  (Celery beat), Regulatory Intelligence, audit hardening + tests.

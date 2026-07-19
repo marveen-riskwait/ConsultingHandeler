@@ -5,6 +5,7 @@ from api.models import (
     Party, OwnershipRelationship,
     Department, Team, OrganizationMembership, TeamMembership,
     AssignmentRule, SLAConfiguration, RequirementDefinition,
+    Provider, ProviderCredential,
 )
 from api.auth import hash_password
 
@@ -132,6 +133,34 @@ DEFAULT_RULES = [
              "message": "A customer address changed."},
         ],
     },
+    {
+        "name": "Provider verification failed -> remediation",
+        "event_type": "PROVIDER_STATUS_CHANGED",
+        "conditions": {"payload.status": "FAILED"},
+        "actions": [
+            {"type": "CREATE_TASK", "task_type": "IDV_REMEDIATION",
+             "title": "Identity verification failed — remediate",
+             "priority": "HIGH", "due_days": 3},
+            {"type": "NOTIFY", "severity": "HIGH", "requires_action": True,
+             "roles": ["ANALYST", "KYC_ANALYST"],
+             "title": "Identity verification failed",
+             "message": "A provider returned a failed verification."},
+        ],
+    },
+    {
+        "name": "Provider screening match -> case",
+        "event_type": "PROVIDER_STATUS_CHANGED",
+        "conditions": {"payload.status": "MATCH"},
+        "actions": [
+            {"type": "CREATE_CASE", "case_type": "SANCTIONS_MATCH",
+             "title": "Provider screening match", "priority": "CRITICAL",
+             "due_days": 1},
+            {"type": "NOTIFY", "severity": "CRITICAL", "requires_action": True,
+             "roles": ["COMPLIANCE_OFFICER", "ANALYST"],
+             "title": "Provider screening match",
+             "message": "A screening provider reported a potential match."},
+        ],
+    },
 ]
 
 
@@ -216,6 +245,27 @@ def _seed_requirement_definitions():
                 organization_id=None, code=code, label=label, kind=kind,
                 applies_customer_type=ctype, min_risk_rank=rank,
                 data_field=data_field, doc_type=doc_type))
+    db.session.commit()
+
+
+def _seed_providers(org):
+    """A working mock provider + prepared (disabled) real stubs."""
+    specs = [
+        ("Mock Identity", "KYC", "mock", True,
+         [("webhook_secret", "demo-secret")]),
+        ("Sumsub", "KYC", "sumsub", False, []),
+        ("ComplyAdvantage", "AML", "comply_advantage", False, []),
+    ]
+    for name, ptype, adapter, enabled, creds in specs:
+        provider = Provider.query.filter_by(name=name, organization_id=org.id).first()
+        if provider is None:
+            provider = Provider(organization_id=org.id, name=name,
+                                provider_type=ptype, adapter=adapter, enabled=enabled)
+            db.session.add(provider)
+            db.session.flush()
+            for key_name, value in creds:
+                db.session.add(ProviderCredential(
+                    provider_id=provider.id, key_name=key_name, secret_value=value))
     db.session.commit()
 
 
@@ -367,6 +417,10 @@ def setup_commands(app):
         _seed_management(org)
         click.echo("Management seeded: SLA targets + assignment rules "
                    "(sanctions -> LEAST_LOADED on KYC Team, default ROUND_ROBIN).")
+
+        _seed_providers(org)
+        click.echo("Providers seeded: Mock Identity (KYC, webhook secret 'demo-secret'), "
+                   "Sumsub + ComplyAdvantage stubs (disabled, need credentials).")
         click.echo("Done. Log in and run screening on 'John Smith' or "
                    "'Sergei Ivanov' to see the full chain fire.")
 

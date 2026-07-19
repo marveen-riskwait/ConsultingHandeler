@@ -314,6 +314,103 @@ const RolesTab = () => {
   );
 };
 
+// ----------------------------------------------------- Integrations tab
+const HEALTH_SEV = { UP: "LOW", DEGRADED: "MEDIUM", DOWN: "CRITICAL", UNKNOWN: "INFO" };
+
+const IntegrationsTab = ({ me }) => {
+  const [providers, setProviders] = useState([]);
+  const [events, setEvents] = useState([]);
+  const [error, setError] = useState(null);
+  const [credForm, setCredForm] = useState({});
+
+  const load = useCallback(() => {
+    api.providers().then(setProviders).catch((e) => setError(e.message));
+    api.webhookEvents().then(setEvents).catch(() => {});
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const canManage = can(me, "organization.update");
+
+  const toggle = async (p) => {
+    try { await api.updateProvider(p.id, { enabled: !p.enabled }); load(); }
+    catch (e) { setError(e.message); }
+  };
+  const checkHealth = async (p) => {
+    try { await api.providerHealth(p.id); load(); }
+    catch (e) { setError(e.message); }
+  };
+  const saveCred = async (p) => {
+    const f = credForm[p.id] || {};
+    if (!f.key_name || !f.secret_value) return;
+    try {
+      await api.setProviderCredential(p.id, f);
+      setCredForm({ ...credForm, [p.id]: {} });
+      load();
+    } catch (e) { setError(e.message); }
+  };
+
+  return (
+    <>
+      {error && <div className="alert alert-danger py-2">{error}</div>}
+      <div className="co-card" style={{ marginBottom: "1rem" }}>
+        <div className="section-title">Providers</div>
+        {providers.map((p) => (
+          <div key={p.id} style={{ padding: ".6rem 0", borderBottom: "1px solid var(--co-border)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: ".6rem" }}>
+              <span className={`dotsev ${p.enabled ? "LOW" : "INFO"}`} />
+              <div className="grow" style={{ flex: 1 }}>
+                <b>{p.name}</b> <span className="muted" style={{ fontSize: ".82rem" }}>· {p.provider_type} · adapter: {p.adapter}</span>
+                {p.health && <span className={`chip ${HEALTH_SEV[p.health.status] || "INFO"}`} style={{ marginLeft: ".4rem" }}>{p.health.status}</span>}
+              </div>
+              <span className="muted" style={{ fontSize: ".78rem" }}>
+                creds: {p.credential_keys.length ? p.credential_keys.join(", ") : "none"}
+              </span>
+              {canManage && <button className="btn btn-sm btn-outline-secondary" onClick={() => checkHealth(p)}>Health</button>}
+              {canManage && (
+                <button className={`btn btn-sm ${p.enabled ? "btn-outline-danger" : "btn-outline-success"}`} onClick={() => toggle(p)}>
+                  {p.enabled ? "Disable" : "Enable"}
+                </button>
+              )}
+            </div>
+            {canManage && (
+              <div className="row g-1 align-items-end" style={{ marginTop: ".4rem", paddingLeft: "1.4rem" }}>
+                <div className="col-3">
+                  <input className="form-control form-control-sm" placeholder="key (e.g. api_key)"
+                    value={(credForm[p.id] || {}).key_name || ""}
+                    onChange={(e) => setCredForm({ ...credForm, [p.id]: { ...(credForm[p.id] || {}), key_name: e.target.value } })} />
+                </div>
+                <div className="col-4">
+                  <input type="password" className="form-control form-control-sm" placeholder="secret (never displayed)"
+                    value={(credForm[p.id] || {}).secret_value || ""}
+                    onChange={(e) => setCredForm({ ...credForm, [p.id]: { ...(credForm[p.id] || {}), secret_value: e.target.value } })} />
+                </div>
+                <div className="col-2">
+                  <button className="btn btn-sm btn-co w-100" onClick={() => saveCred(p)}>Save credential</button>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="co-card">
+        <div className="section-title">Recent webhook events</div>
+        {events.length === 0 && <div className="muted" style={{ fontSize: ".88rem" }}>No webhook events yet.</div>}
+        {events.map((e) => (
+          <div className="work-row" key={e.id}>
+            <span className={`dotsev ${e.status === "PROCESSED" ? "LOW" : e.status === "ERROR" ? "CRITICAL" : "INFO"}`} />
+            <div className="grow">
+              <div className="title">{e.provider} · {e.external_event_id}</div>
+              <div className="meta">signature {e.signature_valid ? "valid" : "invalid"}</div>
+            </div>
+            <span className={`chip ${e.status === "PROCESSED" ? "LOW" : e.status === "ERROR" ? "CRITICAL" : "INFO"}`}>{e.status}</span>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+};
+
 // ------------------------------------------------------- Organization tab
 const OrganizationTab = ({ me }) => {
   const [data, setData] = useState(null);
@@ -359,6 +456,7 @@ export const Administration = () => {
     { key: "users", label: "Users", icon: "fa-user-group", permission: "user.view" },
     { key: "teams", label: "Teams & Departments", icon: "fa-sitemap", permission: "team.view" },
     { key: "roles", label: "Roles & Permissions", icon: "fa-shield-halved", permission: "role.view" },
+    { key: "integrations", label: "Integrations", icon: "fa-plug", permission: "organization.view" },
     { key: "organization", label: "Organization", icon: "fa-building", permission: "organization.view" },
   ].filter((t) => can(me, t.permission));
   const [tab, setTab] = useState(tabs.length ? tabs[0].key : null);
@@ -382,6 +480,7 @@ export const Administration = () => {
       {tab === "users" && <UsersTab me={me} />}
       {tab === "teams" && <TeamsTab me={me} />}
       {tab === "roles" && <RolesTab />}
+      {tab === "integrations" && <IntegrationsTab me={me} />}
       {tab === "organization" && <OrganizationTab me={me} />}
     </>
   );

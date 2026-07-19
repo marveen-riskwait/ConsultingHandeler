@@ -18,6 +18,8 @@ from api.models import (
     Department, Team, OrganizationMembership, TeamMembership, AccessPolicy,
     Invitation, AssignmentRule, SLAConfiguration,
     ProfileField, RequirementDefinition, RequirementInstance,
+    Provider, ProviderCredential, NormalizedComplianceResult, WebhookEvent,
+    PROVIDER_TYPES,
     utcnow, ROLES, CUSTOMER_TYPES, PARTY_KINDS, PERMISSION_CATALOG,
 )
 from api.utils import APIException
@@ -27,7 +29,7 @@ from api.auth import (
 )
 from api.engine import (risk_engine, audit, ownership, data_scope, workload,
                         sla, assignment, party_service, requirement_engine,
-                        kyc_service)
+                        kyc_service, provider_service)
 from api.engine.screening_service import review_match
 from api.tasks import run_screening
 
@@ -1167,6 +1169,117 @@ def list_assignment_rules(user):
              .filter_by(organization_id=user.organization_id)
              .order_by(AssignmentRule.priority).all())
     return jsonify([r.serialize() for r in rules]), 200
+
+
+# ---------------------------------------------------------------------------
+# Provider integration layer — admin config, verification, webhooks
+# ---------------------------------------------------------------------------
+@api.route("/providers", methods=["GET"])
+@permission_required("organization.view")
+def list_providers(user):
+    providers = (Provider.query.filter(
+        (Provider.organization_id == user.organization_id) |
+        (Provider.organization_id.is_(None))).all())
+    out = []
+    for p in providers:
+        out.append(p.serialize(with_health=provider_service.latest_health(p)))
+    return jsonify(out), 200
+
+
+@api.route("/providers", methods=["POST"])
+@permission_required("organization.update")
+def create_provider(user):
+    body = request.get_json(silent=True) or {}
+    name = (body.get("name") or "").strip()
+    ptype = body.get("provider_type")
+    if not name or ptype not in PROVIDER_TYPES:
+        raise APIException("name and a valid provider_type are required", status_code=400)
+    provider = Provider(
+        organization_id=user.organization_id, name=name, provider_type=ptype,
+        adapter=body.get("adapter", "mock"), enabled=bool(body.get("enabled", True)),
+        config=body.get("config") or {})
+    db.session.add(provider)
+    audit.record("PROVIDER_CREATED", "provider", None, actor=user,
+                 new_value=f"{name} ({ptype})", commit=True)
+    return jsonify(provider.serialize()), 201
+
+
+@api.route("/providers/<int:pid>", methods=["PATCH"])
+@permission_required("organization.update")
+def update_provider(user, pid):
+    provider = Provider.query.get(pid)
+    if provider is None or (provider.organization_id not in (None, user.organization_id)):
+        raise APIException("Provider not found", status_code=404)
+    body = request.get_json(silent=True) or {}
+    if "enabled" in body:
+        provider.enabled = bool(body["enabled"])
+    if "config" in body:
+        provider.config = body["config"] or {}
+    db.session.commit()
+    return jsonify(provider.serialize()), 200
+
+
+@api.route("/providers/<int:pid>/credentials", methods=["POST"])
+@permission_required("organization.update")
+def set_provider_credential(user, pid):
+    provider = Provider.query.get(pid)
+    if provider is None or provider.organization_id != user.organization_id:
+        raise APIException("Provider not found", status_code=404)
+    body = request.get_json(silent=True) or {}
+    key_name = (body.get("key_name") or "").strip()
+    secret = body.get("secret_value")
+    if not key_name or not secret:
+        raise APIException("key_name and secret_value are required", status_code=400)
+    cred = (ProviderCredential.query
+            .filter_by(provider_id=pid, key_name=key_name).first())
+    if cred is None:
+        cred = ProviderCredential(provider_id=pid, key_name=key_name)
+        db.session.add(cred)
+    cred.secret_value = secret   # stored server-side, never returned
+    audit.record("PROVIDER_CREDENTIAL_SET", "provider", pid, actor=user,
+                 new_value=key_name, commit=True)
+    return jsonify({"provider_id": pid, "key_name": key_name, "stored": True}), 201
+
+
+@api.route("/providers/<int:pid>/health", methods=["POST"])
+@permission_required("organization.view")
+def provider_health(user, pid):
+    provider = Provider.query.get(pid)
+    if provider is None or (provider.organization_id not in (None, user.organization_id)):
+        raise APIException("Provider not found", status_code=404)
+    hs = provider_service.check_health(provider)
+    return jsonify(hs.serialize()), 200
+
+
+@api.route("/webhook-events", methods=["GET"])
+@permission_required("organization.view")
+def list_webhook_events(user):
+    events = (WebhookEvent.query.order_by(WebhookEvent.received_at.desc())
+              .limit(50).all())
+    return jsonify([e.serialize() for e in events]), 200
+
+
+@api.route("/customers/<int:cid>/verify", methods=["POST"])
+@permission_required("kyc.review")
+def verify_customer(user, cid):
+    customer = _get_customer_for(user, cid)
+    try:
+        result = provider_service.verify_customer(customer, actor=user)
+    except RuntimeError as exc:
+        raise APIException(str(exc), status_code=409)
+    return jsonify(result.serialize()), 200
+
+
+@api.route("/webhooks/providers/<provider_name>", methods=["POST"])
+def provider_webhook(provider_name):
+    """Public, signature-verified, idempotent provider webhook ingestion."""
+    raw_body = request.get_data() or b""
+    payload = request.get_json(silent=True) or {}
+    signature = request.headers.get("X-Signature")
+    event_id = request.headers.get("X-Event-Id")
+    status_code, body = provider_service.process_webhook(
+        provider_name, raw_body, payload, signature, event_id)
+    return jsonify(body), status_code
 
 
 @api.route("/health", methods=["GET"])

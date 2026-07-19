@@ -88,6 +88,13 @@ export const api = {
   assignCase: (id, payload) => request(`/cases/${id}/assign`, { method: "POST", body: payload }),
   bulkAssign: (strategy) => request("/management/queues/bulk-assign", { method: "POST", body: { strategy } }),
 
+  providers: () => request("/providers"),
+  createProvider: (payload) => request("/providers", { method: "POST", body: payload }),
+  updateProvider: (id, payload) => request(`/providers/${id}`, { method: "PATCH", body: payload }),
+  setProviderCredential: (id, payload) => request(`/providers/${id}/credentials`, { method: "POST", body: payload }),
+  providerHealth: (id) => request(`/providers/${id}/health`, { method: "POST" }),
+  webhookEvents: () => request("/webhook-events"),
+
   invitations: () => request("/invitations"),
   createInvitation: (payload) => request("/invitations", { method: "POST", body: payload }),
   revokeInvitation: (id) => request(`/invitations/${id}/revoke`, { method: "POST" }),

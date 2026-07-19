@@ -121,6 +121,12 @@ def process_event(event_id):
     if customer is not None:
         risk_engine.recompute(customer, reason=f"After {event.event_type}")
 
+    # Continuous compliance: high/critical events raise a first-class alert, and
+    # material events trigger an event-driven review.
+    from api.engine import alert_service, review_engine
+    alert_service.maybe_create_from_event(event)
+    review_engine.maybe_event_review(event)
+
     event.status = "PROCESSED"
     event.processed_at = utcnow()
     db.session.commit()

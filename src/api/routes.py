@@ -19,7 +19,7 @@ from api.models import (
     Invitation, AssignmentRule, SLAConfiguration,
     ProfileField, RequirementDefinition, RequirementInstance,
     Provider, ProviderCredential, NormalizedComplianceResult, WebhookEvent,
-    PROVIDER_TYPES,
+    PROVIDER_TYPES, ComplianceAlert, Review, REVIEW_TYPES,
     utcnow, ROLES, CUSTOMER_TYPES, PARTY_KINDS, PERMISSION_CATALOG,
 )
 from api.utils import APIException
@@ -29,7 +29,8 @@ from api.auth import (
 )
 from api.engine import (risk_engine, audit, ownership, data_scope, workload,
                         sla, assignment, party_service, requirement_engine,
-                        kyc_service, provider_service)
+                        kyc_service, provider_service, alert_service,
+                        review_engine)
 from api.engine.screening_service import review_match
 from api.tasks import run_screening
 
@@ -176,6 +177,8 @@ def create_customer(user):
     db.session.commit()
     # Baseline risk from static factors (geography / activity / ownership).
     risk_engine.recompute(customer, actor=user, reason="Initial assessment")
+    # Onboarding schedules the initial KYC review.
+    review_engine.schedule_initial(customer, actor=user)
     return jsonify(customer.serialize()), 201
 
 
@@ -204,6 +207,11 @@ def customer_overview(user, cid):
                .order_by(ScreeningMatch.first_detected_at.desc()).all())
     ubos = ownership.compute_ubos(customer)
     completeness = requirement_engine.summary(customer)
+    reviews = (Review.query.filter_by(customer_id=cid)
+               .order_by(Review.created_at.desc()).all())
+    open_alerts = (ComplianceAlert.query.filter_by(customer_id=cid)
+                   .filter(ComplianceAlert.status.notin_(["RESOLVED", "DISMISSED"]))
+                   .all())
 
     return jsonify({
         "customer": customer.serialize(),
@@ -214,6 +222,8 @@ def customer_overview(user, cid):
         "screening_matches": [m.serialize() for m in matches],
         "ubos": ubos,
         "completeness": completeness,
+        "reviews": [r.serialize() for r in reviews],
+        "open_alerts": [a.serialize() for a in open_alerts],
         "recent_events": [e.serialize() for e in events],
         "changes_since_review": [e.serialize() for e in changes],
         "last_review_at": since.isoformat() if since else None,
@@ -1280,6 +1290,128 @@ def provider_webhook(provider_name):
     status_code, body = provider_service.process_webhook(
         provider_name, raw_body, payload, signature, event_id)
     return jsonify(body), status_code
+
+
+# ---------------------------------------------------------------------------
+# Alert Center — first-class compliance alerts (distinct from notifications)
+# ---------------------------------------------------------------------------
+@api.route("/alerts", methods=["GET"])
+@permission_required("case.view")
+def list_alerts(user):
+    q = ComplianceAlert.query.filter_by(organization_id=user.organization_id)
+    status = request.args.get("status")
+    if status:
+        q = q.filter(ComplianceAlert.status == status)
+    elif request.args.get("open") != "false":
+        q = q.filter(ComplianceAlert.status.notin_(["RESOLVED", "DISMISSED"]))
+    alerts = q.order_by(ComplianceAlert.created_at.desc()).limit(200).all()
+    out = []
+    for a in alerts:
+        data = a.serialize()
+        cust = Customer.query.get(a.customer_id) if a.customer_id else None
+        data["customer_name"] = cust.name if cust else None
+        out.append(data)
+    return jsonify(out), 200
+
+
+def _get_alert(user, alert_id):
+    alert = ComplianceAlert.query.get(alert_id)
+    if alert is None or alert.organization_id != user.organization_id:
+        raise APIException("Alert not found", status_code=404)
+    return alert
+
+
+@api.route("/alerts/<int:alert_id>/assign", methods=["POST"])
+@permission_required("case.assign")
+def assign_alert(user, alert_id):
+    alert = _get_alert(user, alert_id)
+    body = request.get_json(silent=True) or {}
+    assignee = User.query.get(body.get("user_id") or user.id)
+    if assignee is None or assignee.organization_id != user.organization_id:
+        raise APIException("Assignee not found", status_code=404)
+    alert_service.assign(alert, user, assignee)
+    return jsonify(alert.serialize()), 200
+
+
+@api.route("/alerts/<int:alert_id>/resolve", methods=["POST"])
+@permission_required("case.update")
+def resolve_alert(user, alert_id):
+    alert = _get_alert(user, alert_id)
+    body = request.get_json(silent=True) or {}
+    reason = (body.get("resolution") or "").strip()
+    if not reason:
+        raise APIException("A resolution is required", status_code=400)
+    alert_service.resolve(alert, user, reason, dismiss=bool(body.get("dismiss")))
+    return jsonify(alert.serialize()), 200
+
+
+# ---------------------------------------------------------------------------
+# Reviews — scheduled & event-driven
+# ---------------------------------------------------------------------------
+@api.route("/customers/<int:cid>/reviews", methods=["GET"])
+@permission_required("customer.view")
+def list_reviews(user, cid):
+    customer = _get_customer_for(user, cid)
+    reviews = (Review.query.filter_by(customer_id=cid)
+               .order_by(Review.created_at.desc()).all())
+    return jsonify([r.serialize() for r in reviews]), 200
+
+
+@api.route("/customers/<int:cid>/reviews", methods=["POST"])
+@permission_required("kyc.review")
+def create_review(user, cid):
+    customer = _get_customer_for(user, cid)
+    body = request.get_json(silent=True) or {}
+    rtype = body.get("review_type", "PERIODIC_REVIEW")
+    if rtype not in REVIEW_TYPES:
+        raise APIException(f"review_type must be one of {list(REVIEW_TYPES)}",
+                           status_code=400)
+    review = review_engine.create_event_driven(
+        customer, trigger=body.get("trigger") or "Manual", actor=user) \
+        if rtype == "EVENT_DRIVEN_REVIEW" else None
+    if review is None:
+        review = Review(organization_id=customer.organization_id,
+                        customer_id=cid, review_type=rtype, status="DUE",
+                        trigger=body.get("trigger") or "Manual",
+                        due_at=utcnow() + timedelta(days=14))
+        db.session.add(review)
+        db.session.commit()
+    return jsonify(review.serialize()), 201
+
+
+def _get_review(user, review_id):
+    review = Review.query.get(review_id)
+    if review is None or review.organization_id != user.organization_id:
+        raise APIException("Review not found", status_code=404)
+    return review
+
+
+@api.route("/reviews/<int:review_id>/start", methods=["POST"])
+@permission_required("kyc.review")
+def start_review(user, review_id):
+    review = _get_review(user, review_id)
+    review_engine.start_review(review, actor=user)
+    return jsonify(review.serialize()), 200
+
+
+@api.route("/reviews/<int:review_id>/complete", methods=["POST"])
+@permission_required("kyc.review")
+def complete_review(user, review_id):
+    review = _get_review(user, review_id)
+    body = request.get_json(silent=True) or {}
+    decision = body.get("decision") or "APPROVED"
+    reason = (body.get("reason") or "").strip()
+    if not reason:
+        raise APIException("A reason is required", status_code=400)
+    review, nxt = review_engine.complete_review(review, decision, reason, actor=user)
+    return jsonify({"review": review.serialize(), "next": nxt.serialize()}), 200
+
+
+@api.route("/monitoring/run", methods=["POST"])
+@permission_required("management.view")
+def run_monitoring(user):
+    """Manually trigger the continuous-monitoring sweep (normally on Celery beat)."""
+    return jsonify(review_engine.run_monitoring()), 200
 
 
 @api.route("/health", methods=["GET"])

@@ -34,6 +34,10 @@ from api.models.providers import (
     RawProviderResponse, NormalizedComplianceResult, WebhookEvent,
     PROVIDER_TYPES, HEALTH_STATUSES,
 )
+from api.models.alerts import ComplianceAlert, ALERT_STATUSES
+from api.models.reviews import (
+    Review, REVIEW_TYPES, REVIEW_STATUSES, REVIEW_FREQUENCY_MONTHS,
+)
 from api.models.customer import (
     Customer, Document, RiskAssessment,
     CUSTOMER_TYPES, RISK_LEVELS, HIGH_RISK_COUNTRIES, HIGH_RISK_ACTIVITIES,
@@ -65,6 +69,8 @@ __all__ = [
     "Provider", "ProviderCredential", "ProviderHealthStatus",
     "RawProviderResponse", "NormalizedComplianceResult", "WebhookEvent",
     "PROVIDER_TYPES", "HEALTH_STATUSES",
+    "ComplianceAlert", "ALERT_STATUSES",
+    "Review", "REVIEW_TYPES", "REVIEW_STATUSES", "REVIEW_FREQUENCY_MONTHS",
     "Customer", "Document", "RiskAssessment",
     "CUSTOMER_TYPES", "RISK_LEVELS", "HIGH_RISK_COUNTRIES", "HIGH_RISK_ACTIVITIES",
     "Party", "Person", "LegalEntity", "Address", "OwnershipRelationship",

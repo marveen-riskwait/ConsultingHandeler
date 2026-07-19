@@ -212,6 +212,20 @@ The project remains runnable after every phase.
   PROVIDER_STATUS_CHANGED rules (FAILED -> remediation task, MATCH -> case).
   Admin Integrations tab (providers, health, credential form that never shows
   secrets, webhook event log).
-- **Next: Phase G** — data-driven Risk (RiskMethodology/Factor/Rule), Review &
-  Workflow engines, Alert Center (vs Notification), continuous monitoring
-  (Celery beat), Regulatory Intelligence, audit hardening + tests.
+- **Phase G1 (Reviews + Alert Center + Continuous Monitoring)** — shipped:
+  **Review** model + engine (INITIAL_KYC / PERIODIC / EVENT_DRIVEN / EDD /
+  REMEDIATION; frequency by risk LOW 36m … CRITICAL 6m; INITIAL_KYC scheduled on
+  onboarding; material events raise an EVENT_DRIVEN review; completing a review
+  schedules the next periodic; SCHEDULED→DUE→OVERDUE monitoring emitting
+  REVIEW_DUE / REVIEW_OVERDUE). **ComplianceAlert** — first-class, distinct from
+  Notification, auto-raised from HIGH/CRITICAL events (deduped per event),
+  assignable + resolvable/dismissable, audited. Wired into
+  rules_engine.process_event (alerts + event-driven reviews). Celery beat jobs
+  `check_review_deadlines` + `rescreen_high_risk` (+ existing doc-expiry).
+  Endpoints: /alerts (+assign/resolve), /customers/:id/reviews,
+  /reviews/:id/start|complete, /monitoring/run; overview carries reviews +
+  open_alerts. Frontend: Alert Center page (severity counters, assign/resolve),
+  Reviews + Open-alerts cards in Customer 360.
+- **Next: Phase G2** — data-driven Risk (RiskMethodology/Factor/Rule/Threshold,
+  versioned), Workflow engine (Definition/Instance/Step/Transition/Approval),
+  Regulatory Intelligence, audit hardening + automated test suite.

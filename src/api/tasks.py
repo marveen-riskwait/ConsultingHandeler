@@ -36,6 +36,24 @@ def run_screening(customer_id, requested_by_id=None):
     return {"customer_id": customer_id, "run_id": run.id, "matches": emitted}
 
 
+@celery.task(name="api.tasks.check_review_deadlines")
+def check_review_deadlines():
+    """Continuous monitoring: flip due/overdue reviews and emit REVIEW_DUE /
+    REVIEW_OVERDUE events."""
+    from api.engine.review_engine import run_monitoring
+    return run_monitoring()
+
+
+@celery.task(name="api.tasks.rescreen_high_risk")
+def rescreen_high_risk():
+    """Periodically re-screen HIGH/CRITICAL customers against the providers."""
+    customers = (Customer.query
+                 .filter(Customer.risk_level.in_(["HIGH", "CRITICAL"])).all())
+    for c in customers:
+        run_screening_for(c)
+    return {"rescreened": len(customers)}
+
+
 @celery.task(name="api.tasks.check_document_expiry")
 def check_document_expiry(days=30):
     """Daily sweep: emit DOCUMENT_EXPIRING for docs expiring within `days`."""

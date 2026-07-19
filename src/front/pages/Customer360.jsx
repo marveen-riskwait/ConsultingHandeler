@@ -81,6 +81,16 @@ export const Customer360 = () => {
     catch (err) { setError(err.message); }
   };
 
+  const startReview = async (rid) => {
+    try { await api.startReview(rid); await load(); } catch (err) { setError(err.message); }
+  };
+  const completeReview = async (rid) => {
+    const reason = window.prompt("Review decision reason (audited):");
+    if (!reason) return;
+    try { await api.completeReview(rid, { decision: "APPROVED", reason }); await load(); }
+    catch (err) { setError(err.message); }
+  };
+
   const submitOwner = async (e) => {
     e.preventDefault();
     setError(null);
@@ -120,8 +130,9 @@ export const Customer360 = () => {
 
   const { customer, risk, open_cases, tasks, documents, recent_events,
           changes_since_review, screening_matches = [], ubos = [],
-          completeness } = data;
+          completeness, reviews = [], open_alerts = [] } = data;
   const REQ_SEV = { VERIFIED: "LOW", RECEIVED: "MEDIUM", MISSING: "CRITICAL", WAIVED: "INFO" };
+  const REVIEW_SEV = { OVERDUE: "CRITICAL", DUE: "HIGH", IN_PROGRESS: "MEDIUM", SCHEDULED: "INFO", COMPLETED: "LOW" };
 
   return (
     <>
@@ -236,6 +247,45 @@ export const Customer360 = () => {
           </div>
         </div>
       )}
+
+      {/* Reviews & open alerts */}
+      <div className="row g-3 mt-0">
+        <div className="col-md-6">
+          <div className="co-card">
+            <div className="section-title">Reviews</div>
+            {reviews.length === 0 && <div className="muted" style={{ fontSize: ".88rem" }}>No reviews.</div>}
+            {reviews.slice(0, 6).map((r) => (
+              <div className="work-row" key={r.id}>
+                <span className={`dotsev ${REVIEW_SEV[r.status] || "INFO"}`} />
+                <div className="grow">
+                  <div className="title">{r.review_type.replace(/_/g, " ")}</div>
+                  <div className="meta">{r.trigger}{r.due_at ? ` · due ${new Date(r.due_at).toLocaleDateString()}` : ""}</div>
+                </div>
+                <span className={`chip ${REVIEW_SEV[r.status] || "INFO"}`}>{r.status}</span>
+                {can(store.user, "kyc.review") && r.status === "DUE" && (
+                  <button className="btn btn-sm btn-outline-secondary" onClick={() => startReview(r.id)}>Start</button>
+                )}
+                {can(store.user, "kyc.review") && r.status === "IN_PROGRESS" && (
+                  <button className="btn btn-sm btn-outline-success" onClick={() => completeReview(r.id)}>Complete</button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="col-md-6">
+          <div className="co-card">
+            <div className="section-title">Open compliance alerts</div>
+            {open_alerts.length === 0 && <div className="muted" style={{ fontSize: ".88rem" }}>No open alerts.</div>}
+            {open_alerts.map((a) => (
+              <div className="work-row" key={a.id}>
+                <span className={`dotsev ${a.severity}`} />
+                <div className="grow"><div className="title">{a.title}</div><div className="meta">{a.status} · {a.source}</div></div>
+                <span className={`chip ${a.severity}`}>{a.severity}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
 
       <div className="row g-3 mt-0">
         <div className="col-md-6">

@@ -68,6 +68,16 @@ export const api = {
   readNotification: (id) => request(`/notifications/${id}/read`, { method: "POST" }),
   rules: () => request("/rules"),
 
+  // alerts & reviews
+  alerts: (status) => request(`/alerts${status ? `?status=${status}` : ""}`),
+  assignAlert: (id, payload) => request(`/alerts/${id}/assign`, { method: "POST", body: payload || {} }),
+  resolveAlert: (id, payload) => request(`/alerts/${id}/resolve`, { method: "POST", body: payload }),
+  reviews: (id) => request(`/customers/${id}/reviews`),
+  createReview: (id, payload) => request(`/customers/${id}/reviews`, { method: "POST", body: payload }),
+  startReview: (rid) => request(`/reviews/${rid}/start`, { method: "POST" }),
+  completeReview: (rid, payload) => request(`/reviews/${rid}/complete`, { method: "POST", body: payload }),
+  runMonitoring: () => request("/monitoring/run", { method: "POST" }),
+
   // administration
   organization: () => request("/organization"),
   updateOrganization: (payload) => request("/organization", { method: "PATCH", body: payload }),

@@ -350,7 +350,7 @@ def setup_commands(app):
     @app.cli.command("seed-demo")
     def seed_demo():
         """Create the demo organization, users, rules and sample customers."""
-        from api.engine import risk_engine
+        from api.engine import risk_engine, review_engine
         from api.rbac import sync_roles, get_role
 
         # RBAC first: permissions + system roles.
@@ -407,6 +407,7 @@ def setup_commands(app):
             db.session.add(customer)
             db.session.flush()
             risk_engine.recompute(customer, reason="Seed baseline")
+            review_engine.schedule_initial(customer)
         db.session.commit()
         click.echo(f"Sample customers: {Customer.query.count()}")
 

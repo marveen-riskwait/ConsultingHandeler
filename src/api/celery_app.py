@@ -40,10 +40,18 @@ celery.conf.update(
     timezone="UTC",
     enable_utc=True,
     beat_schedule={
-        # Continuous monitoring: a daily sweep for expiring documents.
+        # Continuous monitoring sweeps.
         "daily-document-expiry-check": {
             "task": "api.tasks.check_document_expiry",
             "schedule": crontab(hour=6, minute=0),
+        },
+        "daily-review-deadline-check": {
+            "task": "api.tasks.check_review_deadlines",
+            "schedule": crontab(hour=6, minute=15),
+        },
+        "weekly-high-risk-rescreening": {
+            "task": "api.tasks.rescreen_high_risk",
+            "schedule": crontab(hour=3, minute=0, day_of_week=1),
         },
     },
 )

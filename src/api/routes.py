@@ -21,6 +21,7 @@ from api.models import (
     Provider, ProviderCredential, NormalizedComplianceResult, WebhookEvent,
     PROVIDER_TYPES, ComplianceAlert, Review, REVIEW_TYPES,
     RiskMethodology, WorkflowDefinition, WorkflowInstance,
+    RegulatorySource, RegulatoryRequirement, RegulatoryChange,
     utcnow, ROLES, CUSTOMER_TYPES, PARTY_KINDS, PERMISSION_CATALOG,
 )
 from api.utils import APIException
@@ -31,7 +32,7 @@ from api.auth import (
 from api.engine import (risk_engine, audit, ownership, data_scope, workload,
                         sla, assignment, party_service, requirement_engine,
                         kyc_service, provider_service, alert_service,
-                        review_engine, workflow_engine)
+                        review_engine, workflow_engine, regulatory_service)
 from api.engine.screening_service import review_match
 from api.tasks import run_screening
 
@@ -1474,6 +1475,53 @@ def approve_step(user, instance_id):
         raise APIException(str(exc), status_code=400)
     return jsonify({"approval": approval.serialize(),
                     "workflow": inst.serialize(deep=True)}), 200
+
+
+# ---------------------------------------------------------------------------
+# Regulatory Intelligence
+# ---------------------------------------------------------------------------
+@api.route("/regulatory", methods=["GET"])
+@permission_required("regulatory.view")
+def regulatory_dashboard(user):
+    return jsonify(regulatory_service.dashboard(user.organization_id)), 200
+
+
+@api.route("/regulatory/sources", methods=["GET"])
+@permission_required("regulatory.view")
+def regulatory_sources(user):
+    sources = (RegulatorySource.query
+               .filter((RegulatorySource.organization_id == user.organization_id) |
+                       (RegulatorySource.organization_id.is_(None))).all())
+    return jsonify([s.serialize(deep=True) for s in sources]), 200
+
+
+@api.route("/regulatory/changes", methods=["POST"])
+@permission_required("regulatory.manage")
+def create_regulatory_change(user):
+    body = request.get_json(silent=True) or {}
+    title = (body.get("title") or "").strip()
+    if not title:
+        raise APIException("title is required", status_code=400)
+    source = None
+    if body.get("source_id"):
+        source = RegulatorySource.query.get(body["source_id"])
+    change = regulatory_service.register_change(
+        user.organization_id, source, title, body.get("summary"),
+        impact_level=body.get("impact_level", "MEDIUM"), actor=user)
+    return jsonify(change.serialize()), 201
+
+
+@api.route("/regulatory/changes/<int:change_id>/assess", methods=["POST"])
+@permission_required("regulatory.manage")
+def assess_regulatory_change(user, change_id):
+    change = RegulatoryChange.query.get(change_id)
+    if change is None or (change.organization_id not in (None, user.organization_id)):
+        raise APIException("Change not found", status_code=404)
+    body = request.get_json(silent=True) or {}
+    assessment = regulatory_service.assess_impact(change, actor=user,
+                                                  notes=body.get("notes"))
+    return jsonify({"change": change.serialize(),
+                    "assessment": assessment.serialize()}), 200
 
 
 @api.route("/risk/methodologies", methods=["GET"])

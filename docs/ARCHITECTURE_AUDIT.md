@@ -248,6 +248,20 @@ The project remains runnable after every phase.
   detail (✓ done / ● active / ○ pending, Complete-step + Approve/Reject).
   workflow.execute added to analyst roles. Seed: EDD (8 steps, senior approval)
   + sanctions-investigation (4 steps) system workflows.
-- **Next: Phase G4** — Regulatory Intelligence (RegulatorySource / Document /
-  Requirement / Change / Control / ImpactAssessment), then audit hardening +
-  automated pytest suite.
+- **Phase G4 (Regulatory Intelligence)** — shipped: RegulatorySource /
+  RegulatoryRequirement / ComplianceControl / RegulatoryChange /
+  ImpactAssessment modelling the document's chain Authority → Source →
+  Requirement → Control → Software feature (+ implementation status).
+  regulatory_service: register_change() emits REGULATORY_REQUIREMENT_CHANGED
+  (rules notify the regulatory/compliance manager); assess_impact() computes the
+  affected requirements, controls, workflows and customers; dashboard()
+  aggregates. Endpoints /regulatory (dashboard), /regulatory/sources,
+  POST /regulatory/changes(+/assess). Regulatory Intelligence page (impact
+  counters, recent changes with Assess-impact, control-implementation status,
+  and the obligation→control→software matrix per authority). Seed: FATF / EU
+  AMLR 2024/1624 / AMLA / CSSF catalog with 7 requirements + controls mapped to
+  the real software modules, and one sample HIGH-impact change. Also fixed
+  org-wide notifications (customer-less events now notify by the payload's
+  organization via recipients_for_org, which also matches additional roles).
+- **Next: Phase G5** — audit hardening (richer audit metadata / evidence) and an
+  automated pytest suite across auth, RBAC/ABAC, the engines and providers.

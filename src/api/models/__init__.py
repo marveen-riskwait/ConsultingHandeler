@@ -45,6 +45,11 @@ from api.models.workflows import (
     WorkflowDefinition, WorkflowStep, WorkflowInstance, WorkflowStepState, Approval,
     WORKFLOW_INSTANCE_STATUSES, STEP_STATES, APPROVAL_STATUSES,
 )
+from api.models.regulatory import (
+    RegulatorySource, RegulatoryRequirement, ComplianceControl,
+    RegulatoryChange, ImpactAssessment,
+    SOURCE_TYPES, CONTROL_STATUSES, CHANGE_IMPACT, CHANGE_STATUSES,
+)
 from api.models.customer import (
     Customer, Document, RiskAssessment,
     CUSTOMER_TYPES, RISK_LEVELS, HIGH_RISK_COUNTRIES, HIGH_RISK_ACTIVITIES,
@@ -81,6 +86,9 @@ __all__ = [
     "Review", "REVIEW_TYPES", "REVIEW_STATUSES", "REVIEW_FREQUENCY_MONTHS",
     "WorkflowDefinition", "WorkflowStep", "WorkflowInstance", "WorkflowStepState",
     "Approval", "WORKFLOW_INSTANCE_STATUSES", "STEP_STATES", "APPROVAL_STATUSES",
+    "RegulatorySource", "RegulatoryRequirement", "ComplianceControl",
+    "RegulatoryChange", "ImpactAssessment",
+    "SOURCE_TYPES", "CONTROL_STATUSES", "CHANGE_IMPACT", "CHANGE_STATUSES",
     "Customer", "Document", "RiskAssessment",
     "CUSTOMER_TYPES", "RISK_LEVELS", "HIGH_RISK_COUNTRIES", "HIGH_RISK_ACTIVITIES",
     "Party", "Person", "LegalEntity", "Address", "OwnershipRelationship",

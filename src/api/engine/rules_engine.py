@@ -11,7 +11,7 @@ from api.models import (
     utcnow,
 )
 from api.engine import audit, risk_engine
-from api.engine.events import notify_users, recipients_for
+from api.engine.events import notify_users, recipients_for, recipients_for_org
 
 
 def _match_conditions(conditions, customer, payload):
@@ -87,7 +87,13 @@ def _run_action(action, *, customer, event, created_case):
         return created_case
 
     if atype == "NOTIFY":
-        users = recipients_for(customer, action.get("roles"))
+        # Customer events notify the customer's org; customer-less events (e.g.
+        # regulatory changes) use the organization carried in the payload.
+        if customer is not None:
+            users = recipients_for(customer, action.get("roles"))
+        else:
+            org_id = (event.payload or {}).get("organization_id")
+            users = recipients_for_org(org_id, action.get("roles"))
         notify_users(
             users,
             severity=action.get("severity", event.severity),

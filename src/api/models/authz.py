@@ -139,7 +139,7 @@ _ADMIN_CORE = [
     "risk.view",
     "workflow.view", "workflow.configure",
     "rule.view", "rule.create", "rule.update", "rule.activate",
-    "regulatory.view",
+    "regulatory.view", "regulatory.manage",
     "audit.view",
     "management.view", "management.team_view",
     "management.performance_view", "management.assign_work",

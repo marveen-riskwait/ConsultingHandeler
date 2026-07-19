@@ -81,6 +81,12 @@ export const api = {
   completeReview: (rid, payload) => request(`/reviews/${rid}/complete`, { method: "POST", body: payload }),
   runMonitoring: () => request("/monitoring/run", { method: "POST" }),
 
+  // regulatory intelligence
+  regulatory: () => request("/regulatory"),
+  regulatorySources: () => request("/regulatory/sources"),
+  createRegulatoryChange: (payload) => request("/regulatory/changes", { method: "POST", body: payload }),
+  assessRegulatoryChange: (id, notes) => request(`/regulatory/changes/${id}/assess`, { method: "POST", body: { notes } }),
+
   // administration
   organization: () => request("/organization"),
   updateOrganization: (payload) => request("/organization", { method: "PATCH", body: payload }),

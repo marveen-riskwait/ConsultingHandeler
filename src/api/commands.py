@@ -148,6 +148,17 @@ DEFAULT_RULES = [
         ],
     },
     {
+        "name": "Regulatory change -> notify regulatory manager",
+        "event_type": "REGULATORY_REQUIREMENT_CHANGED",
+        "conditions": {},
+        "actions": [
+            {"type": "NOTIFY", "severity": "HIGH", "requires_action": True,
+             "roles": ["REGULATORY_MANAGER", "COMPLIANCE_MANAGER"],
+             "title": "Regulatory change detected",
+             "message": "A regulatory change was detected — assess its impact."},
+        ],
+    },
+    {
         "name": "Provider screening match -> case",
         "event_type": "PROVIDER_STATUS_CHANGED",
         "conditions": {"payload.status": "MATCH"},
@@ -234,6 +245,66 @@ DEFAULT_REQUIREMENTS = [
     ("SOURCE_OF_FUNDS", "Source of funds", "DATA", "ANY", 2, "source_of_funds", None),
     ("SOURCE_OF_WEALTH", "Source of wealth", "DATA", "ANY", 2, "source_of_wealth", None),
 ]
+
+
+def _seed_regulatory():
+    """A starter regulatory catalog mapping obligations to software controls."""
+    from api.models import (RegulatorySource, RegulatoryRequirement,
+                            ComplianceControl, RegulatoryChange)
+    if RegulatorySource.query.first():
+        return
+
+    sources = {}
+    for key, name, authority, jur, stype, url in [
+        ("FATF", "FATF Recommendations", "FATF", "International", "RECOMMENDATION",
+         "https://www.fatf-gafi.org/en/publications/Fatfrecommendations/"),
+        ("AMLR", "Regulation (EU) 2024/1624 (AML Regulation)", "EU", "European Union",
+         "REGULATION", "https://eur-lex.europa.eu/eli/reg/2024/1624/oj"),
+        ("AMLA", "AMLA regulatory instruments", "AMLA", "European Union", "RTS",
+         "https://www.amla.europa.eu/"),
+        ("CSSF", "CSSF AML/CFT framework", "CSSF", "Luxembourg", "CIRCULAR",
+         "https://www.cssf.lu/en/anti-money-laundering-and-terrorist-financing/"),
+    ]:
+        s = RegulatorySource(organization_id=None, name=name, authority=authority,
+                             jurisdiction=jur, source_type=stype, official_url=url)
+        db.session.add(s)
+        db.session.flush()
+        sources[key] = s
+
+    # requirement -> control (software module) mapping (the doc's obligation matrix).
+    reqs = [
+        ("AMLR", "Art. 20", "Identify and verify the customer", "CDD",
+         "Identity verification workflow", "KYC module", "IMPLEMENTED"),
+        ("AMLR", "Art. 51", "Identify the beneficial owner(s)", "UBO",
+         "Ownership graph + UBO detection", "Ownership engine", "IMPLEMENTED"),
+        ("AMLR", "Art. 26", "Keep customer data up to date (ongoing monitoring)", "MONITORING",
+         "Automatic review triggers + monitoring", "Review/Monitoring engine", "IMPLEMENTED"),
+        ("FATF", "Rec. 10", "Risk-based customer due diligence", "RISK",
+         "Data-driven risk methodology", "Risk engine", "IMPLEMENTED"),
+        ("FATF", "Rec. 12", "Enhanced due diligence for PEPs", "EDD",
+         "EDD workflow with senior approval", "Workflow engine", "IMPLEMENTED"),
+        ("CSSF", "Reg. 12-02", "Record keeping & audit trail", "RECORD_KEEPING",
+         "Immutable audit trail", "Audit engine", "IMPLEMENTED"),
+        ("AMLA", "Consultation", "Harmonised ongoing-monitoring reporting formats", "REPORTING",
+         "Regulatory reporting", "Reporting module", "NEEDS_REVIEW"),
+    ]
+    for skey, art, title, obl, control_name, module, status in reqs:
+        r = RegulatoryRequirement(source_id=sources[skey].id, article_reference=art,
+                                  title=title, obligation_type=obl)
+        db.session.add(r)
+        db.session.flush()
+        db.session.add(ComplianceControl(
+            organization_id=None, requirement_id=r.id, name=control_name,
+            control_type=obl, software_module=module, implementation_status=status))
+
+    # A sample detected change so the dashboard shows real content.
+    db.session.add(RegulatoryChange(
+        organization_id=None, source_id=sources["AMLA"].id,
+        title="New AMLA guidance on ongoing monitoring",
+        summary="AMLA published guidance affecting Article 26(5) ongoing-monitoring "
+                "expectations; review monitoring frequency methodology.",
+        impact_level="HIGH", status="NEW"))
+    db.session.commit()
 
 
 def _seed_workflows():
@@ -435,6 +506,10 @@ def setup_commands(app):
         _seed_workflows()
         click.echo("Workflows seeded (EDD 8-step w/ senior approval, "
                    "sanctions investigation).")
+
+        _seed_regulatory()
+        click.echo("Regulatory catalog seeded (FATF / EU AMLR / AMLA / CSSF "
+                   "+ requirements, controls, a sample change).")
 
         # Rules (global, idempotent by name).
         for spec in DEFAULT_RULES:

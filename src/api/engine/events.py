@@ -25,14 +25,23 @@ def notify_users(users, *, severity, title, message, customer_id=None,
         ))
 
 
+def recipients_for_org(organization_id, roles):
+    """Active users in an organization holding one of `roles` (by primary or
+    additional role)."""
+    if not organization_id:
+        return []
+    users = User.query.filter_by(organization_id=organization_id, is_active=True).all()
+    if not roles:
+        return users
+    roleset = set(roles)
+    return [u for u in users if roleset & set(u.role_names())]
+
+
 def recipients_for(customer, roles):
     """Users in the customer's organization holding one of `roles`."""
     if customer is None:
         return []
-    q = User.query.filter_by(organization_id=customer.organization_id, is_active=True)
-    if roles:
-        q = q.filter(User.role.in_(roles))
-    return q.all()
+    return recipients_for_org(customer.organization_id, roles)
 
 
 def _celery_enabled():

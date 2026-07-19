@@ -25,10 +25,25 @@ export const CaseDetail = () => {
     finally { setBusy(false); }
   };
 
+  const completeStep = async (instId) => {
+    setError(null);
+    try { await api.completeStep(instId); await load(); }
+    catch (e) { setError(e.message); }
+  };
+  const approveStep = async (instId, decision) => {
+    const r = window.prompt(`${decision === "APPROVE" ? "Approval" : "Rejection"} reason (audited):`);
+    if (!r) return;
+    setError(null);
+    try { await api.approveStep(instId, decision, r); await load(); }
+    catch (e) { setError(e.message); }
+  };
+
   if (error && !data) return <div className="alert alert-danger">{error}</div>;
   if (!data) return <div className="empty">Loading case…</div>;
 
-  const { case: cs, customer, risk, related_events, audit } = data;
+  const { case: cs, customer, risk, related_events, audit, workflow } = data;
+  const STEP_ICON = { DONE: "✓", ACTIVE: "●", PENDING: "○", SKIPPED: "–" };
+  const STEP_SEV = { DONE: "LOW", ACTIVE: "HIGH", PENDING: "INFO", SKIPPED: "INFO" };
   const closed = cs.status === "CLOSED";
   const canConfirm = can(store.user, "screening.confirm_match");
   const sanctionsMatch = related_events.find((e) => e.event_type === "SANCTIONS_MATCH_FOUND");
@@ -87,6 +102,45 @@ export const CaseDetail = () => {
               </div>
             ))}
           </div>
+
+          {/* Workflow tracker */}
+          {workflow && (
+            <div className="co-card">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: ".3rem" }}>
+                <div className="section-title" style={{ marginBottom: 0 }}>Workflow — {workflow.name}</div>
+                <span className={`chip ${workflow.status === "COMPLETED" ? "LOW" : workflow.status === "CANCELLED" ? "CRITICAL" : "MEDIUM"}`}>{workflow.status}</span>
+              </div>
+              {workflow.steps.map((s) => {
+                const isApproved = (s.approvals || []).some((a) => a.status === "APPROVED");
+                const isRejected = (s.approvals || []).some((a) => a.status === "REJECTED");
+                return (
+                  <div className="work-row" key={s.id}>
+                    <span style={{ width: 20, textAlign: "center", color: `var(--sev-${(STEP_SEV[s.status] || "INFO").toLowerCase()})`, fontWeight: 700 }}>
+                      {STEP_ICON[s.status]}
+                    </span>
+                    <div className="grow">
+                      <div className="title" style={s.status === "DONE" ? { opacity: 0.65 } : {}}>
+                        {s.order}. {s.name}
+                        {s.requires_approval && <span className="muted" style={{ fontWeight: 400 }}> · needs {s.approver_role}</span>}
+                      </div>
+                      {s.note && <div className="meta">{s.note}</div>}
+                      {isApproved && <div className="meta" style={{ color: "var(--sev-low)" }}>approved</div>}
+                      {isRejected && <div className="meta" style={{ color: "var(--sev-critical)" }}>rejected</div>}
+                    </div>
+                    {s.status === "ACTIVE" && s.requires_approval && !isApproved && !isRejected && can(store.user, "case.approve") && (
+                      <>
+                        <button className="btn btn-sm btn-outline-success" onClick={() => approveStep(workflow.id, "APPROVE")}>Approve</button>
+                        <button className="btn btn-sm btn-outline-danger" onClick={() => approveStep(workflow.id, "REJECT")}>Reject</button>
+                      </>
+                    )}
+                    {s.status === "ACTIVE" && (!s.requires_approval || isApproved) && can(store.user, "workflow.execute") && (
+                      <button className="btn btn-sm btn-outline-secondary" onClick={() => completeStep(workflow.id)}>Complete step</button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {/* Audit trail */}
           <div className="co-card">

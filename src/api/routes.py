@@ -20,7 +20,7 @@ from api.models import (
     ProfileField, RequirementDefinition, RequirementInstance,
     Provider, ProviderCredential, NormalizedComplianceResult, WebhookEvent,
     PROVIDER_TYPES, ComplianceAlert, Review, REVIEW_TYPES,
-    RiskMethodology,
+    RiskMethodology, WorkflowDefinition, WorkflowInstance,
     utcnow, ROLES, CUSTOMER_TYPES, PARTY_KINDS, PERMISSION_CATALOG,
 )
 from api.utils import APIException
@@ -31,7 +31,7 @@ from api.auth import (
 from api.engine import (risk_engine, audit, ownership, data_scope, workload,
                         sla, assignment, party_service, requirement_engine,
                         kyc_service, provider_service, alert_service,
-                        review_engine)
+                        review_engine, workflow_engine)
 from api.engine.screening_service import review_match
 from api.tasks import run_screening
 
@@ -548,12 +548,15 @@ def get_case(user, case_id):
               .order_by(AuditEvent.created_at.asc()).all())
     latest = (RiskAssessment.query.filter_by(customer_id=customer.id)
               .order_by(RiskAssessment.created_at.desc()).first())
+    instance = (WorkflowInstance.query.filter_by(case_id=case.id)
+                .order_by(WorkflowInstance.started_at.desc()).first())
     return jsonify({
         "case": case.serialize(with_tasks=True),
         "customer": customer.serialize(),
         "risk": latest.serialize() if latest else None,
         "related_events": [e.serialize() for e in events],
         "audit": [a.serialize() for a in audits],
+        "workflow": instance.serialize(deep=True) if instance else None,
     }), 200
 
 
@@ -1406,6 +1409,71 @@ def complete_review(user, review_id):
         raise APIException("A reason is required", status_code=400)
     review, nxt = review_engine.complete_review(review, decision, reason, actor=user)
     return jsonify({"review": review.serialize(), "next": nxt.serialize()}), 200
+
+
+# ---------------------------------------------------------------------------
+# Workflow engine
+# ---------------------------------------------------------------------------
+@api.route("/workflows", methods=["GET"])
+@permission_required("workflow.view")
+def list_workflows(user):
+    defs = (WorkflowDefinition.query
+            .filter((WorkflowDefinition.organization_id == user.organization_id) |
+                    (WorkflowDefinition.organization_id.is_(None)))
+            .order_by(WorkflowDefinition.name).all())
+    return jsonify([d.serialize(deep=True) for d in defs]), 200
+
+
+def _get_instance(user, instance_id):
+    inst = WorkflowInstance.query.get(instance_id)
+    if inst is None or inst.organization_id != user.organization_id:
+        raise APIException("Workflow instance not found", status_code=404)
+    return inst
+
+
+@api.route("/cases/<int:case_id>/workflow/start", methods=["POST"])
+@permission_required("workflow.execute")
+def start_workflow(user, case_id):
+    case = Case.query.get(case_id)
+    if case is None:
+        raise APIException("Case not found", status_code=404)
+    _get_customer_for(user, case.customer_id)
+    inst = workflow_engine.start_for_case(case, user.organization_id, actor=user)
+    if inst is None:
+        raise APIException("No matching workflow, or already running", status_code=409)
+    return jsonify(inst.serialize(deep=True)), 201
+
+
+@api.route("/workflow-instances/<int:instance_id>/complete-step", methods=["POST"])
+@permission_required("workflow.execute")
+def complete_step(user, instance_id):
+    inst = _get_instance(user, instance_id)
+    body = request.get_json(silent=True) or {}
+    try:
+        workflow_engine.complete_current_step(inst, actor=user, note=body.get("note"))
+    except PermissionError as exc:
+        raise APIException(str(exc), status_code=403)
+    except ValueError as exc:
+        raise APIException(str(exc), status_code=400)
+    return jsonify(inst.serialize(deep=True)), 200
+
+
+@api.route("/workflow-instances/<int:instance_id>/approve", methods=["POST"])
+@permission_required("case.approve")
+def approve_step(user, instance_id):
+    inst = _get_instance(user, instance_id)
+    body = request.get_json(silent=True) or {}
+    decision = body.get("decision", "APPROVE")
+    reason = (body.get("reason") or "").strip()
+    if decision not in ("APPROVE", "REJECT") or not reason:
+        raise APIException("decision (APPROVE/REJECT) and reason are required",
+                           status_code=400)
+    try:
+        approval = workflow_engine.decide_approval(inst, user, decision, reason)
+    except ValueError as exc:
+        raise APIException(str(exc), status_code=400)
+    return jsonify({"approval": approval.serialize(),
+                    "workflow": inst.serialize(deep=True)}), 200
 
 
 @api.route("/risk/methodologies", methods=["GET"])

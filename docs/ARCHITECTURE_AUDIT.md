@@ -236,5 +236,18 @@ The project remains runnable after every phase.
   one. Endpoints GET /risk/methodologies(/active); admin Risk-Model tab (factor
   table + thresholds); methodology version surfaced on the Customer 360 risk
   card. `risk.view` added to admin roles (they configure the risk model).
-- **Next: Phase G3** — Workflow engine (Definition/Instance/Step/Transition/
-  Approval), Regulatory Intelligence, audit hardening + automated pytest suite.
+- **Phase G3 (Workflow engine)** — shipped: configurable WorkflowDefinition +
+  WorkflowStep (some requiring approval by a role); running instances via
+  WorkflowInstance + WorkflowStepState + Approval. A case that matches a
+  definition's applies_case_type AUTO-STARTS a workflow (wired into the rules
+  engine CREATE_CASE). Steps advance one at a time; an approval-gated step
+  cannot be completed until an Approval is granted by the required role; a
+  rejection cancels the instance. Endpoints: GET /workflows, POST
+  /cases/:id/workflow/start, /workflow-instances/:id/complete-step |approve;
+  case detail returns its workflow. Frontend: workflow tracker in the case
+  detail (✓ done / ● active / ○ pending, Complete-step + Approve/Reject).
+  workflow.execute added to analyst roles. Seed: EDD (8 steps, senior approval)
+  + sanctions-investigation (4 steps) system workflows.
+- **Next: Phase G4** — Regulatory Intelligence (RegulatorySource / Document /
+  Requirement / Change / Control / ImpactAssessment), then audit hardening +
+  automated pytest suite.

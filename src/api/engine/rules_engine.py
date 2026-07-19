@@ -65,8 +65,11 @@ def _run_action(action, *, customer, event, created_case):
                      reason=f"rule action on {event.event_type}")
         # Event-driven assignment: a matching AssignmentRule routes the case to
         # the right person; without a rule it lands in the unassigned queue.
-        from api.engine import assignment
+        from api.engine import assignment, workflow_engine
         assignment.auto_assign(case)
+        # Auto-start a matching configurable workflow (e.g. EDD for PEP cases).
+        if customer is not None:
+            workflow_engine.start_for_case(case, customer.organization_id)
         return case
 
     if atype == "CREATE_TASK":

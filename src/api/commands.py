@@ -236,6 +236,41 @@ DEFAULT_REQUIREMENTS = [
 ]
 
 
+def _seed_workflows():
+    """System workflow definitions (organization_id = NULL)."""
+    from api.models import WorkflowDefinition, WorkflowStep
+    specs = [
+        ("EDD", "Enhanced Due Diligence", "PEP", [
+            ("GATHER", "Gather information", False, None),
+            ("SOW", "Review source of wealth", False, None),
+            ("SOF", "Review source of funds", False, None),
+            ("SCREEN", "Complete screening", False, None),
+            ("RISK", "Assess risk", False, None),
+            ("SENIOR_APPROVAL", "Senior approval", True, "COMPLIANCE_OFFICER"),
+            ("DECISION", "Final decision", False, None),
+            ("CLOSE", "Close", False, None),
+        ]),
+        ("SANCTIONS_INVESTIGATION", "Sanctions investigation", "SANCTIONS_MATCH", [
+            ("CONFIRM_IDENTITY", "Confirm identity", False, None),
+            ("COMPARE", "Compare against sanctions record", False, None),
+            ("ASSESS", "Assess the match", False, None),
+            ("DECISION", "Compliance decision", True, "COMPLIANCE_OFFICER"),
+        ]),
+    ]
+    for code, name, case_type, steps in specs:
+        if WorkflowDefinition.query.filter_by(code=code, organization_id=None).first():
+            continue
+        wf = WorkflowDefinition(organization_id=None, code=code, name=name,
+                                applies_case_type=case_type, active=True)
+        db.session.add(wf)
+        db.session.flush()
+        for i, (scode, sname, req, role) in enumerate(steps, start=1):
+            db.session.add(WorkflowStep(definition_id=wf.id, order=i, code=scode,
+                                        name=sname, requires_approval=req,
+                                        approver_role=role))
+    db.session.commit()
+
+
 def _seed_risk_methodology():
     """Default system risk methodology v1 — mirrors the legacy hardcoded model,
     now data-driven and editable."""
@@ -396,6 +431,10 @@ def setup_commands(app):
 
         _seed_risk_methodology()
         click.echo("Risk methodology v1 seeded (6 factors + 4 thresholds).")
+
+        _seed_workflows()
+        click.echo("Workflows seeded (EDD 8-step w/ senior approval, "
+                   "sanctions investigation).")
 
         # Rules (global, idempotent by name).
         for spec in DEFAULT_RULES:

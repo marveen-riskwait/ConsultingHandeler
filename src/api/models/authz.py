@@ -118,7 +118,7 @@ _ANALYST_BASE = [
     "case.view", "case.create", "case.update",
     "task.view", "task.create", "task.complete",
     "document.view", "document.upload",
-    "workflow.view", "rule.view",
+    "workflow.view", "workflow.execute", "rule.view",
 ]
 
 _MANAGER_EXTRA = [

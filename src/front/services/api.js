@@ -62,6 +62,9 @@ export const api = {
   case: (id) => request(`/cases/${id}`),
   decideCase: (id, decision, reason) =>
     request(`/cases/${id}/decision`, { method: "POST", body: { decision, reason } }),
+  startWorkflow: (caseId) => request(`/cases/${caseId}/workflow/start`, { method: "POST" }),
+  completeStep: (instanceId, note) => request(`/workflow-instances/${instanceId}/complete-step`, { method: "POST", body: { note } }),
+  approveStep: (instanceId, decision, reason) => request(`/workflow-instances/${instanceId}/approve`, { method: "POST", body: { decision, reason } }),
 
   // notifications / rules / audit
   notifications: () => request("/notifications"),

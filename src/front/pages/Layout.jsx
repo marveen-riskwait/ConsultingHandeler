@@ -15,12 +15,29 @@ export const Layout = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Refresh the profile (roles/permissions) on load AND on every navigation,
+  // so a permission granted by an admin mid-session shows up in the UI without
+  // re-login — the sidebar and buttons are all driven by user.permissions.
   useEffect(() => {
-    if (store.token && !store.organization) {
+    if (store.token) {
       api.me()
         .then((data) => dispatch({ type: "set_me", payload: data }))
         .catch(() => dispatch({ type: "logout" }));
     }
+  }, [store.token, location.pathname]);
+
+  // Also refresh when the tab regains focus (e.g. the admin granted a
+  // permission while the user was on another window).
+  useEffect(() => {
+    const onFocus = () => {
+      if (store.token) {
+        api.me()
+          .then((data) => dispatch({ type: "set_me", payload: data }))
+          .catch(() => {});
+      }
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
   }, [store.token]);
 
   if (!store.token) {

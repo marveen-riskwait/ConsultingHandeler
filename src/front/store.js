@@ -25,6 +25,9 @@ export default function storeReducer(store, action = {}) {
       return { ...store, token, user };
     }
     case "set_me":
+      // Keep the cached copy in sync so a reload doesn't flash stale
+      // permissions before /auth/me answers.
+      localStorage.setItem("user", JSON.stringify(action.payload.user));
       return { ...store, user: action.payload.user, organization: action.payload.organization };
     case "logout":
       localStorage.removeItem("token");

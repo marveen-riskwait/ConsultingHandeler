@@ -27,3 +27,4 @@ wtforms==2.3.3
 flask-jwt-extended==4.6.0
 celery==5.3.6
 redis==5.0.1
+anthropic>=0.40

@@ -123,4 +123,12 @@ export const api = {
   createInvitation: (payload) => request("/invitations", { method: "POST", body: payload }),
   revokeInvitation: (id) => request(`/invitations/${id}/revoke`, { method: "POST" }),
   acceptInvitation: (payload) => request("/auth/accept-invitation", { method: "POST", body: payload }),
+
+  // Compliance Copilot (AI assistant)
+  assistantMeta: () => request("/assistant/meta"),
+  conversations: () => request("/assistant/conversations"),
+  createConversation: (payload) => request("/assistant/conversations", { method: "POST", body: payload || {} }),
+  conversation: (id) => request(`/assistant/conversations/${id}`),
+  sendAssistantMessage: (id, content) =>
+    request(`/assistant/conversations/${id}/messages`, { method: "POST", body: { content } }),
 };

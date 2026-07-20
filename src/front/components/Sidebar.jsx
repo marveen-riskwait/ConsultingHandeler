@@ -6,6 +6,7 @@ import { filterByPermission } from "../permissions/can";
 // still enforces access — this only hides what the user cannot use.
 const NAV_ITEMS = [
   { to: "/", end: true, icon: "fa-inbox", label: "My Work", permission: "workspace.view" },
+  { to: "/assistant", icon: "fa-robot", label: "Copilot", permission: "workspace.view" },
   { to: "/customers", icon: "fa-users", label: "Customers", permission: "customer.view" },
   { to: "/alerts", icon: "fa-triangle-exclamation", label: "Alerts", permission: "case.view" },
   { to: "/management", icon: "fa-chart-line", label: "Management", permission: "management.view" },

@@ -145,9 +145,14 @@ export const Customer360 = () => {
             {customer.business_activity ? ` · ${customer.business_activity}` : ""}
           </div>
         </div>
-        <button className="btn btn-co" onClick={runScreening} disabled={screening}>
-          <i className="fa-solid fa-magnifying-glass" /> {screening ? "Screening…" : "Run screening"}
-        </button>
+        <div className="d-flex gap-2">
+          <Link to={`/assistant?customer=${id}`} className="btn btn-outline-secondary">
+            <i className="fa-solid fa-robot" /> Ask Copilot
+          </Link>
+          <button className="btn btn-co" onClick={runScreening} disabled={screening}>
+            <i className="fa-solid fa-magnifying-glass" /> {screening ? "Screening…" : "Run screening"}
+          </button>
+        </div>
       </div>
 
       <div className="row g-3">

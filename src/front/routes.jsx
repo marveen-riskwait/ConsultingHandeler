@@ -14,11 +14,13 @@ import { Management } from "./pages/Management";
 import { Alerts } from "./pages/Alerts";
 import { Regulatory } from "./pages/Regulatory";
 import { Audit } from "./pages/Audit";
+import { Assistant } from "./pages/Assistant";
 
 export const router = createBrowserRouter(
   createRoutesFromElements(
     <Route path="/" element={<Layout />} errorElement={<h1 className="co-container">Not found!</h1>}>
       <Route index element={<Workspace />} />
+      <Route path="/assistant" element={<Assistant />} />
       <Route path="/customers" element={<Customers />} />
       <Route path="/customers/:id" element={<Customer360 />} />
       <Route path="/alerts" element={<Alerts />} />

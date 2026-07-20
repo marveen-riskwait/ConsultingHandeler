@@ -22,6 +22,7 @@ from api.models import (
     PROVIDER_TYPES, ComplianceAlert, Review, REVIEW_TYPES,
     RiskMethodology, WorkflowDefinition, WorkflowInstance,
     RegulatorySource, RegulatoryRequirement, RegulatoryChange,
+    Conversation, Message,
     utcnow, ROLES, CUSTOMER_TYPES, PARTY_KINDS, PERMISSION_CATALOG,
 )
 from api.utils import APIException
@@ -32,7 +33,8 @@ from api.auth import (
 from api.engine import (risk_engine, audit, ownership, data_scope, workload,
                         sla, assignment, party_service, requirement_engine,
                         kyc_service, provider_service, alert_service,
-                        review_engine, workflow_engine, regulatory_service)
+                        review_engine, workflow_engine, regulatory_service,
+                        assistant_service)
 from api.engine.screening_service import review_match
 from api.tasks import run_screening
 
@@ -1552,6 +1554,76 @@ def active_risk_methodology(user):
 def run_monitoring(user):
     """Manually trigger the continuous-monitoring sweep (normally on Celery beat)."""
     return jsonify(review_engine.run_monitoring()), 200
+
+
+# ---------------------------------------------------------------------------
+# Compliance Copilot (AI assistant)
+# ---------------------------------------------------------------------------
+def _get_conversation_for(user, conversation_id):
+    conv = Conversation.query.get(conversation_id)
+    if conv is None or conv.organization_id != user.organization_id \
+            or conv.user_id != user.id:
+        raise APIException("Conversation not found", status_code=404)
+    return conv
+
+
+@api.route("/assistant/meta", methods=["GET"])
+@permission_required("workspace.view")
+def assistant_meta(user):
+    """UI bootstrap: which provider is live + suggested prompts."""
+    from api.integrations.ai import get_llm
+    return jsonify({
+        "provider": get_llm().name,
+        "suggested_prompts": assistant_service.SUGGESTED_PROMPTS,
+    }), 200
+
+
+@api.route("/assistant/conversations", methods=["GET"])
+@permission_required("workspace.view")
+def list_conversations(user):
+    convs = (Conversation.query
+             .filter_by(organization_id=user.organization_id, user_id=user.id)
+             .order_by(Conversation.updated_at.desc()).all())
+    return jsonify([c.serialize() for c in convs]), 200
+
+
+@api.route("/assistant/conversations", methods=["POST"])
+@permission_required("workspace.view")
+def create_conversation(user):
+    body = request.get_json(silent=True) or {}
+    customer_id = body.get("customer_id")
+    if customer_id is not None:
+        # Validate the anchor belongs to the org.
+        _get_customer_for(user, customer_id)
+    conv = Conversation(
+        organization_id=user.organization_id,
+        user_id=user.id,
+        customer_id=customer_id,
+        title=(body.get("title") or "New conversation"),
+    )
+    db.session.add(conv)
+    db.session.commit()
+    return jsonify(conv.serialize(with_messages=True)), 201
+
+
+@api.route("/assistant/conversations/<int:conversation_id>", methods=["GET"])
+@permission_required("workspace.view")
+def get_conversation(user, conversation_id):
+    conv = _get_conversation_for(user, conversation_id)
+    return jsonify(conv.serialize(with_messages=True)), 200
+
+
+@api.route("/assistant/conversations/<int:conversation_id>/messages", methods=["POST"])
+@permission_required("workspace.view")
+def send_assistant_message(user, conversation_id):
+    conv = _get_conversation_for(user, conversation_id)
+    body = request.get_json(silent=True) or {}
+    text = (body.get("content") or "").strip()
+    if not text:
+        raise APIException("content is required", status_code=400)
+    reply = assistant_service.ask(conv, user, text)
+    return jsonify({"conversation": conv.serialize(),
+                    "reply": reply.serialize()}), 201
 
 
 @api.route("/health", methods=["GET"])

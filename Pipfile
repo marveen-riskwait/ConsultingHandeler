@@ -20,6 +20,7 @@ wtforms = "==3.1.2"
 sqlalchemy = "*"
 celery = "*"
 redis = "*"
+anthropic = "*"
 
 [dev-packages]
 pytest = "*"

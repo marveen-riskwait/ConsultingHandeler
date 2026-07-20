@@ -66,6 +66,7 @@ from api.models.compliance import ComplianceEvent, ComplianceRule, EVENT_SEVERIT
 from api.models.workflow import Case, Task, CASE_STATUSES
 from api.models.notifications import Notification
 from api.models.audit import AuditEvent
+from api.models.assistant import Conversation, Message, MESSAGE_ROLES
 
 __all__ = [
     "db", "utcnow",
@@ -99,4 +100,5 @@ __all__ = [
     "ComplianceEvent", "ComplianceRule", "EVENT_SEVERITIES",
     "Case", "Task", "CASE_STATUSES",
     "Notification", "AuditEvent",
+    "Conversation", "Message", "MESSAGE_ROLES",
 ]

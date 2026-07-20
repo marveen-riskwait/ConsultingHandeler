@@ -172,6 +172,20 @@ DEFAULT_RULES = [
              "message": "A screening provider reported a potential match."},
         ],
     },
+    {
+        "name": "KYC form submitted -> analyst review",
+        "event_type": "KYC_FORM_SUBMITTED",
+        "conditions": {},
+        "actions": [
+            {"type": "CREATE_TASK", "task_type": "KYC_REVIEW",
+             "title": "Review submitted KYC form",
+             "priority": "MEDIUM", "due_days": 3},
+            {"type": "NOTIFY", "severity": "INFO", "requires_action": True,
+             "roles": ["KYC_ANALYST", "ANALYST"],
+             "title": "KYC form submitted",
+             "message": "A customer KYC form was submitted and awaits review."},
+        ],
+    },
 ]
 
 
@@ -239,11 +253,18 @@ DEFAULT_REQUIREMENTS = [
     ("ARTICLES_OF_ASSOCIATION", "Articles of association", "DOCUMENT", "COMPANY", 0, None, "ARTICLES_OF_ASSOCIATION"),
     ("REGISTRATION_NUMBER", "Registration number", "DATA", "COMPANY", 0, "registration_number", None),
     ("BUSINESS_ACTIVITY", "Business activity", "DATA", "COMPANY", 0, "business_activity", None),
+    ("TAX_RESIDENCE", "Country of tax residence", "DATA", "INDIVIDUAL", 0, "country_of_tax_residence", None),
+    ("PROOF_OF_INCOME", "Proof of income / revenue", "DOCUMENT", "INDIVIDUAL", 1, None, "PROOF_OF_INCOME"),
+    ("SHAREHOLDER_REGISTER", "Shareholder register", "DOCUMENT", "COMPANY", 1, None, "SHAREHOLDER_REGISTER"),
+    ("FINANCIAL_STATEMENTS", "Financial statements", "DOCUMENT", "COMPANY", 1, None, "FINANCIAL_STATEMENTS"),
     # Any customer
     ("PURPOSE_OF_RELATIONSHIP", "Purpose of relationship", "DATA", "ANY", 0, "purpose_of_relationship", None),
+    ("EXPECTED_ACTIVITY", "Expected account activity", "DATA", "ANY", 0, "expected_monthly_volume", None),
+    ("PEP_SELF_DECLARATION", "PEP self-declaration", "DATA", "ANY", 0, "pep_self_declaration", None),
     # Enhanced Due Diligence (HIGH risk and above)
     ("SOURCE_OF_FUNDS", "Source of funds", "DATA", "ANY", 2, "source_of_funds", None),
     ("SOURCE_OF_WEALTH", "Source of wealth", "DATA", "ANY", 2, "source_of_wealth", None),
+    ("SOURCE_OF_FUNDS_EVIDENCE", "Source of funds evidence", "DOCUMENT", "ANY", 2, None, "SOURCE_OF_FUNDS_EVIDENCE"),
 ]
 
 

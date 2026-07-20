@@ -16,6 +16,7 @@ import { Alerts } from "./pages/Alerts";
 import { Regulatory } from "./pages/Regulatory";
 import { Audit } from "./pages/Audit";
 import { Assistant } from "./pages/Assistant";
+import { KycForm } from "./pages/KycForm";
 
 export const router = createBrowserRouter(
   createRoutesFromElements(
@@ -27,6 +28,7 @@ export const router = createBrowserRouter(
       <Route path="/assistant" element={<Assistant />} />
       <Route path="/customers" element={<Customers />} />
       <Route path="/customers/:id" element={<Customer360 />} />
+      <Route path="/customers/:id/kyc-form" element={<KycForm />} />
       <Route path="/alerts" element={<Alerts />} />
       <Route path="/regulatory" element={<Regulatory />} />
       <Route path="/audit" element={<Audit />} />

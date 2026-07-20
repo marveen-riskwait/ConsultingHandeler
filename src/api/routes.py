@@ -1557,6 +1557,96 @@ def run_monitoring(user):
 
 
 # ---------------------------------------------------------------------------
+# KYC intake form (full CDD questionnaire)
+# ---------------------------------------------------------------------------
+@api.route("/kyc-form/schema", methods=["GET"])
+@permission_required("kyc.view")
+def kyc_form_schema(user):
+    from api import kyc_form
+    ctype = request.args.get("customer_type", "INDIVIDUAL")
+    rank = int(request.args.get("risk_rank", 0))
+    return jsonify(kyc_form.schema_for(ctype, rank)), 200
+
+
+@api.route("/customers/<int:cid>/kyc-form", methods=["GET"])
+@permission_required("kyc.view")
+def get_kyc_form(user, cid):
+    """The customer's form: schema at their risk rank + current values + proofs."""
+    from api import kyc_form
+    from api.models import RISK_RANK
+    customer = _get_customer_for(user, cid)
+    rank = RISK_RANK.get(customer.risk_level, 0)
+    schema = kyc_form.schema_for(customer.customer_type, rank)
+    fields = ProfileField.query.filter_by(customer_id=cid).all()
+    docs = Document.query.filter_by(customer_id=cid).all()
+    return jsonify({
+        **schema,
+        "customer": customer.serialize(),
+        "values": {f.field_key: {"value": f.value, "verified": f.verified,
+                                 "source": f.source} for f in fields},
+        "documents": [d.serialize() for d in docs],
+        "completeness": requirement_engine.summary(customer),
+    }), 200
+
+
+@api.route("/customers/<int:cid>/kyc-form", methods=["POST"])
+@permission_required("kyc.edit")
+def save_kyc_form(user, cid):
+    """Batch-save form answers into ProfileField (source='kyc_form')."""
+    from api import kyc_form
+    customer = _get_customer_for(user, cid)
+    body = request.get_json(silent=True) or {}
+    values = body.get("fields") or {}
+    if not isinstance(values, dict) or not values:
+        raise APIException("fields must be a non-empty object", status_code=400)
+
+    index = kyc_form.field_index()
+    current = {f.field_key: f.value for f in
+               ProfileField.query.filter_by(customer_id=cid).all()}
+    saved = 0
+    for key, value in values.items():
+        spec = index.get(key)
+        if spec is None:
+            continue  # only schema fields are accepted
+        value = ("" if value is None else str(value)).strip()
+        if value == (current.get(key) or ""):
+            continue  # unchanged — don't reset verification
+        kyc_service.set_field(customer, key, value,
+                              category=spec.get("category"),
+                              source="kyc_form", actor=user)
+        saved += 1
+
+    return jsonify({"saved": saved,
+                    "completeness": requirement_engine.summary(customer)}), 200
+
+
+@api.route("/customers/<int:cid>/kyc-form/submit", methods=["POST"])
+@permission_required("kyc.edit")
+def submit_kyc_form(user, cid):
+    """Finalize the intake: audit + event so the rules engine routes review work."""
+    from api.engine.events import emit_event
+    customer = _get_customer_for(user, cid)
+    summary = requirement_engine.summary(customer)
+
+    audit.record("KYC_FORM_SUBMITTED", "customer", cid, actor=user,
+                 new_value=f"completeness={summary['completeness_pct']}%",
+                 commit=True)
+    emit_event("KYC_FORM_SUBMITTED", customer_id=cid, severity="INFO",
+               source="kyc_form", actor=user,
+               payload={"completeness_pct": summary["completeness_pct"]})
+
+    # A self-declared PEP triggers the EDD chain even before screening runs.
+    pep = (ProfileField.query
+           .filter_by(customer_id=cid, field_key="pep_self_declaration").first())
+    if pep and (pep.value or "").lower() == "yes":
+        emit_event("PEP_DETECTED", customer_id=cid, severity="HIGH",
+                   source="kyc_form_self_declaration", actor=user,
+                   payload={"declared": True})
+
+    return jsonify({"submitted": True, "completeness": summary}), 202
+
+
+# ---------------------------------------------------------------------------
 # Public watchlists (OFAC / UN / EU) + Companies House KYB
 # ---------------------------------------------------------------------------
 @api.route("/watchlists", methods=["GET"])

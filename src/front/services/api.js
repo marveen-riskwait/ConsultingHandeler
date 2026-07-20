@@ -124,6 +124,13 @@ export const api = {
   revokeInvitation: (id) => request(`/invitations/${id}/revoke`, { method: "POST" }),
   acceptInvitation: (payload) => request("/auth/accept-invitation", { method: "POST", body: payload }),
 
+  // KYC intake form
+  kycForm: (id) => request(`/customers/${id}/kyc-form`),
+  saveKycForm: (id, fields) =>
+    request(`/customers/${id}/kyc-form`, { method: "POST", body: { fields } }),
+  submitKycForm: (id) =>
+    request(`/customers/${id}/kyc-form/submit`, { method: "POST" }),
+
   // Public watchlists (OFAC / UN / EU) + Companies House
   watchlists: () => request("/watchlists"),
   watchlistSearch: (q) => request(`/watchlists/search?q=${encodeURIComponent(q)}`),

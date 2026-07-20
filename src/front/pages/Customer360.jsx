@@ -155,6 +155,11 @@ export const Customer360 = () => {
           </div>
         </div>
         <div className="d-flex gap-2">
+          {can(store.user, "kyc.view") && (
+            <Link to={`/customers/${id}/kyc-form`} className="btn btn-outline-secondary">
+              <i className="fa-solid fa-clipboard-check" /> KYC form
+            </Link>
+          )}
           <Link to={`/assistant?customer=${id}`} className="btn btn-outline-secondary">
             <i className="fa-solid fa-robot" /> Ask Copilot
           </Link>

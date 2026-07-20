@@ -124,6 +124,12 @@ export const api = {
   revokeInvitation: (id) => request(`/invitations/${id}/revoke`, { method: "POST" }),
   acceptInvitation: (payload) => request("/auth/accept-invitation", { method: "POST", body: payload }),
 
+  // Permission management (clickable matrix + special authorizations)
+  toggleRolePermission: (roleId, code, enabled) =>
+    request(`/roles/${roleId}/permissions`, { method: "POST", body: { code, enabled } }),
+  toggleUserPermission: (userId, code, enabled) =>
+    request(`/users/${userId}/permissions`, { method: "POST", body: { code, enabled } }),
+
   // KYC intake form
   kycForm: (id) => request(`/customers/${id}/kyc-form`),
   saveKycForm: (id, fields) =>

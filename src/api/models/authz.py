@@ -213,6 +213,17 @@ user_roles = Table(
     Column("role_id", ForeignKey("role.id"), primary_key=True),
 )
 
+# Per-user special authorizations: individual permission GRANTS on top of the
+# user's role(s). Effective permissions = union(roles) ∪ extra grants. There is
+# deliberately no per-user deny — narrowing access is done via roles, so the
+# model stays explainable ("where does this permission come from?").
+user_permissions = Table(
+    "user_permissions",
+    db.metadata,
+    Column("user_id", ForeignKey("user.id"), primary_key=True),
+    Column("permission_id", ForeignKey("permission.id"), primary_key=True),
+)
+
 
 class Permission(db.Model):
     __tablename__ = "permission"

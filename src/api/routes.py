@@ -721,6 +721,67 @@ def list_permissions(user):
     return jsonify([{"code": c, "label": label} for c, label in PERMISSION_CATALOG]), 200
 
 
+# The permissions that keep an ADMIN able to administer permissions. Removing
+# them from the ADMIN role would lock every administrator out — refuse.
+_LOCKOUT_GUARD = {"role.view", "role.update", "user.view"}
+
+
+@api.route("/roles/<int:rid>/permissions", methods=["POST"])
+@permission_required("role.update")
+def toggle_role_permission(user, rid):
+    """Grant or revoke one permission on a role (the clickable matrix)."""
+    role = Role.query.get(rid)
+    if role is None:
+        raise APIException("Role not found", status_code=404)
+    body = request.get_json(silent=True) or {}
+    code = (body.get("code") or "").strip()
+    enabled = bool(body.get("enabled"))
+    permission = Permission.query.filter_by(code=code).first()
+    if permission is None:
+        raise APIException("Unknown permission code", status_code=400)
+    if not enabled and role.name == "ADMIN" and code in _LOCKOUT_GUARD:
+        raise APIException(
+            f"Refusing to remove {code} from ADMIN — administrators would be "
+            "locked out of permission management.", status_code=409)
+
+    has = any(p.code == code for p in role.permissions)
+    if enabled and not has:
+        role.permissions.append(permission)
+    elif not enabled and has:
+        role.permissions = [p for p in role.permissions if p.code != code]
+    audit.record("ROLE_PERMISSION_GRANTED" if enabled else "ROLE_PERMISSION_REVOKED",
+                 "role", role.id, actor=user,
+                 old_value=role.name, new_value=code, commit=True)
+    return jsonify(role.serialize(with_permissions=True)), 200
+
+
+@api.route("/users/<int:uid>/permissions", methods=["POST"])
+@permission_required("role.update")
+def toggle_user_permission(user, uid):
+    """Grant or revoke a special authorization (extra permission) for one user."""
+    target = User.query.get(uid)
+    if target is None or target.organization_id != user.organization_id:
+        raise APIException("User not found", status_code=404)
+    body = request.get_json(silent=True) or {}
+    code = (body.get("code") or "").strip()
+    enabled = bool(body.get("enabled"))
+    permission = Permission.query.filter_by(code=code).first()
+    if permission is None:
+        raise APIException("Unknown permission code", status_code=400)
+
+    has = any(p.code == code for p in target.extra_permissions)
+    if enabled and not has:
+        target.extra_permissions.append(permission)
+    elif not enabled and has:
+        target.extra_permissions = [p for p in target.extra_permissions
+                                    if p.code != code]
+    audit.record("USER_PERMISSION_GRANTED" if enabled else "USER_PERMISSION_REVOKED",
+                 "user", target.id, actor=user,
+                 old_value=target.email, new_value=code,
+                 reason="Special authorization", commit=True)
+    return jsonify(target.serialize()), 200
+
+
 # ---------------------------------------------------------------------------
 # Organization structure (admin foundation) — departments, teams, users
 # ---------------------------------------------------------------------------
@@ -809,7 +870,9 @@ def list_users(user):
     users = User.query.filter_by(organization_id=user.organization_id).all()
     out = []
     for u in users:
-        data = u.serialize(with_permissions=False)
+        # Effective permissions included so the admin UI can show which chips
+        # come from the role vs an individual grant.
+        data = u.serialize(with_permissions=True)
         data["team_ids"] = data_scope.user_team_ids(u)
         out.append(data)
     return jsonify(out), 200

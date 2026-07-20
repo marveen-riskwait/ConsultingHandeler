@@ -13,7 +13,7 @@ from api.models.base import db, utcnow
 # the shared registry), but all modules must be imported before the first query
 # so every mapper is registered. Importing them here guarantees that.
 from api.models.authz import (
-    Permission, Role, role_permissions, user_roles,
+    Permission, Role, role_permissions, user_roles, user_permissions,
     PERMISSION_CATALOG, ALL_CODES, DEFAULT_ROLE_PERMISSIONS,
 )
 from api.models.identity import Organization, User, ROLES
@@ -73,7 +73,7 @@ from api.models.sanctions import (
 
 __all__ = [
     "db", "utcnow",
-    "Permission", "Role", "role_permissions", "user_roles",
+    "Permission", "Role", "role_permissions", "user_roles", "user_permissions",
     "PERMISSION_CATALOG", "ALL_CODES", "DEFAULT_ROLE_PERMISSIONS",
     "Organization", "User", "ROLES",
     "Department", "Team", "OrganizationMembership", "TeamMembership", "AccessPolicy",

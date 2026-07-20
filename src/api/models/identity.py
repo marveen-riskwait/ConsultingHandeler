@@ -9,7 +9,7 @@ from sqlalchemy import String, Boolean, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from api.models.base import db, utcnow
-from api.models.authz import user_roles
+from api.models.authz import user_roles, user_permissions
 
 # Role names available in the platform (see authz.DEFAULT_ROLE_PERMISSIONS).
 ROLES = (
@@ -55,7 +55,21 @@ class User(db.Model):
     roles: Mapped[list["Role"]] = relationship(
         secondary=user_roles, lazy="selectin")
 
+    # Special authorizations: individual permission grants on top of roles.
+    extra_permissions: Mapped[list["Permission"]] = relationship(
+        secondary=user_permissions, lazy="selectin")
+
     def permission_codes(self):
+        codes = set()
+        if self.role_obj:
+            codes |= self.role_obj.permission_codes()
+        for r in self.roles:
+            codes |= r.permission_codes()
+        codes |= {p.code for p in self.extra_permissions}
+        return codes
+
+    def role_permission_codes(self):
+        """Permissions coming from roles only (to distinguish extra grants)."""
         codes = set()
         if self.role_obj:
             codes |= self.role_obj.permission_codes()
@@ -84,6 +98,7 @@ class User(db.Model):
             "role": self.role,
             "roles": self.role_names(),
             "organization_id": self.organization_id,
+            "extra_permissions": sorted(p.code for p in self.extra_permissions),
         }
         if with_permissions:
             data["permissions"] = sorted(self.permission_codes())

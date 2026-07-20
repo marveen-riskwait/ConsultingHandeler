@@ -13,6 +13,8 @@ const UsersTab = ({ me }) => {
   const [users, setUsers] = useState([]);
   const [invitations, setInvitations] = useState([]);
   const [teams, setTeams] = useState([]);
+  const [catalog, setCatalog] = useState([]);
+  const [expanded, setExpanded] = useState(null);
   const [error, setError] = useState(null);
   const [inviteForm, setInviteForm] = useState({ email: "", proposed_role: "KYC_ANALYST", proposed_team_id: "" });
   const [lastToken, setLastToken] = useState(null);
@@ -21,8 +23,24 @@ const UsersTab = ({ me }) => {
     api.users().then(setUsers).catch((e) => setError(e.message));
     api.invitations().then(setInvitations).catch(() => {});
     api.teams().then(setTeams).catch(() => {});
+    api.permissionsCatalog().then(setCatalog).catch(() => {});
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  const canGrant = can(me, "role.update");
+  const permGroups = {};
+  catalog.forEach(({ code }) => {
+    const domain = code.split(".")[0];
+    (permGroups[domain] = permGroups[domain] || []).push(code);
+  });
+
+  const toggleUserPerm = async (u, code, enabled) => {
+    setError(null);
+    try {
+      const updated = await api.toggleUserPermission(u.id, code, enabled);
+      setUsers((us) => us.map((x) => (x.id === updated.id ? updated : x)));
+    } catch (e) { setError(e.message); }
+  };
 
   const invite = async (e) => {
     e.preventDefault();
@@ -97,25 +115,77 @@ const UsersTab = ({ me }) => {
       <div className="co-card">
         <div className="section-title">Users ({users.length})</div>
         {users.map((u) => (
-          <div className="work-row" key={u.id}>
-            <span className={`dotsev ${u.is_active === false ? "LOW" : "INFO"}`} />
-            <div className="grow">
-              <div className="title">{u.full_name} <span className="muted" style={{ fontWeight: 400 }}>· {u.email}</span></div>
-              <div className="meta">{(u.roles || [u.role]).join(", ")}</div>
-            </div>
-            {canUpdate && u.id !== me.id ? (
-              <>
-                <select className="form-select form-select-sm" style={{ width: 190 }}
-                  value={u.role} onChange={(e) => changeRole(u, e.target.value)}>
-                  {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
-                </select>
-                <button className={`btn btn-sm ${u.is_active === false ? "btn-outline-success" : "btn-outline-danger"}`}
-                  onClick={() => toggleActive(u, u.is_active === false)}>
-                  {u.is_active === false ? "Enable" : "Disable"}
+          <div key={u.id}>
+            <div className="work-row">
+              <span className={`dotsev ${u.is_active === false ? "LOW" : "INFO"}`} />
+              <div className="grow">
+                <div className="title">{u.full_name} <span className="muted" style={{ fontWeight: 400 }}>· {u.email}</span></div>
+                <div className="meta">
+                  {(u.roles || [u.role]).join(", ")}
+                  {(u.extra_permissions || []).length > 0 &&
+                    ` · +${u.extra_permissions.length} special authorization${u.extra_permissions.length === 1 ? "" : "s"}`}
+                </div>
+              </div>
+              {canGrant && (
+                <button className="btn btn-sm btn-outline-secondary"
+                  onClick={() => setExpanded(expanded === u.id ? null : u.id)}>
+                  <i className="fa-solid fa-key" /> Permissions
                 </button>
-              </>
-            ) : (
-              <span className="chip INFO">{u.role}</span>
+              )}
+              {canUpdate && u.id !== me.id ? (
+                <>
+                  <select className="form-select form-select-sm" style={{ width: 190 }}
+                    value={u.role} onChange={(e) => changeRole(u, e.target.value)}>
+                    {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                  <button className={`btn btn-sm ${u.is_active === false ? "btn-outline-success" : "btn-outline-danger"}`}
+                    onClick={() => toggleActive(u, u.is_active === false)}>
+                    {u.is_active === false ? "Enable" : "Disable"}
+                  </button>
+                </>
+              ) : (
+                <span className="chip INFO">{u.role}</span>
+              )}
+            </div>
+
+            {expanded === u.id && canGrant && (
+              <div className="perm-panel">
+                <p className="muted" style={{ fontSize: ".78rem", margin: "0 0 .5rem" }}>
+                  Special authorizations for <b>{u.full_name}</b> — dark chips come
+                  from the role (change them in Roles &amp; Permissions); green
+                  chips are individual grants. Click a chip to grant or revoke.
+                </p>
+                {Object.entries(permGroups).map(([domain, codes]) => (
+                  <div key={domain} style={{ marginBottom: ".45rem" }}>
+                    <div className="muted" style={{ fontSize: ".72rem", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: ".2rem" }}>{domain}</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: ".3rem" }}>
+                      {codes.map((code) => {
+                        const fromRole = (u.permissions || []).includes(code) &&
+                          !(u.extra_permissions || []).includes(code);
+                        const extra = (u.extra_permissions || []).includes(code);
+                        const label = code.split(".").slice(1).join(".");
+                        if (fromRole) {
+                          return (
+                            <span key={code} className="chip INFO" title="Granted by role"
+                              style={{ background: "var(--co-primary)", color: "#fff" }}>
+                              ✓ {label}
+                            </span>
+                          );
+                        }
+                        return (
+                          <span key={code} role="button"
+                            className={`chip ${extra ? "LOW" : "INFO"}`}
+                            style={{ cursor: "pointer", ...(extra ? {} : { opacity: 0.4 }) }}
+                            title={extra ? "Special grant — click to revoke" : "Click to grant"}
+                            onClick={() => toggleUserPerm(u, code, !extra)}>
+                            {extra ? "★" : "✗"} {label}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         ))}
@@ -251,11 +321,12 @@ const TeamsTab = ({ me }) => {
 };
 
 // ---------------------------------------------------------------- Roles tab
-const RolesTab = () => {
+const RolesTab = ({ me }) => {
   const [roles, setRoles] = useState([]);
   const [catalog, setCatalog] = useState([]);
   const [error, setError] = useState(null);
   const [selected, setSelected] = useState(null);
+  const [busyCode, setBusyCode] = useState(null);
 
   useEffect(() => {
     api.roles().then((r) => { setRoles(r); if (r.length) setSelected(r[0].name); })
@@ -264,12 +335,23 @@ const RolesTab = () => {
   }, []);
 
   const role = roles.find((r) => r.name === selected);
+  const canEdit = can(me, "role.update");
   // Group catalog codes by domain prefix for a readable matrix.
   const groups = {};
   catalog.forEach(({ code }) => {
     const domain = code.split(".")[0];
     (groups[domain] = groups[domain] || []).push(code);
   });
+
+  const toggle = async (code, has) => {
+    if (!canEdit || busyCode) return;
+    setBusyCode(code); setError(null);
+    try {
+      const updated = await api.toggleRolePermission(role.id, code, !has);
+      setRoles((rs) => rs.map((r) => (r.id === updated.id ? updated : r)));
+    } catch (e) { setError(e.message); }
+    finally { setBusyCode(null); }
+  };
 
   return (
     <>
@@ -291,6 +373,12 @@ const RolesTab = () => {
         <div className="col-md-8">
           <div className="co-card">
             <div className="section-title">Permissions — {selected || "…"}</div>
+            {canEdit && (
+              <p className="muted" style={{ fontSize: ".8rem", marginBottom: ".6rem" }}>
+                Click a permission to grant or revoke it for this role. Changes
+                apply immediately to every user holding the role and are audited.
+              </p>
+            )}
             {role && Object.entries(groups).map(([domain, codes]) => (
               <div key={domain} style={{ marginBottom: ".6rem" }}>
                 <div className="muted" style={{ fontSize: ".75rem", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: ".2rem" }}>{domain}</div>
@@ -299,7 +387,13 @@ const RolesTab = () => {
                     const has = (role.permissions || []).includes(code);
                     return (
                       <span key={code} className={`chip ${has ? "LOW" : "INFO"}`}
-                        style={has ? {} : { opacity: 0.35 }}>
+                        role={canEdit ? "button" : undefined}
+                        onClick={() => toggle(code, has)}
+                        style={{
+                          ...(has ? {} : { opacity: 0.35 }),
+                          ...(canEdit ? { cursor: "pointer" } : {}),
+                          ...(busyCode === code ? { outline: "2px solid var(--co-primary)" } : {}),
+                        }}>
                         {has ? "✓" : "✗"} {code.split(".").slice(1).join(".")}
                       </span>
                     );
@@ -626,7 +720,7 @@ export const Administration = () => {
       </ul>
       {tab === "users" && <UsersTab me={me} />}
       {tab === "teams" && <TeamsTab me={me} />}
-      {tab === "roles" && <RolesTab />}
+      {tab === "roles" && <RolesTab me={me} />}
       {tab === "risk" && <RiskModelTab />}
       {tab === "integrations" && <IntegrationsTab me={me} />}
       {tab === "watchlists" && <WatchlistsTab me={me} />}

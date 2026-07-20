@@ -2,6 +2,7 @@ import {
   createBrowserRouter,
   createRoutesFromElements,
   Route,
+  Navigate,
 } from "react-router-dom";
 import { Layout } from "./pages/Layout";
 import { Login } from "./pages/Login";
@@ -20,6 +21,9 @@ export const router = createBrowserRouter(
   createRoutesFromElements(
     <Route path="/" element={<Layout />} errorElement={<h1 className="co-container">Not found!</h1>}>
       <Route index element={<Workspace />} />
+      {/* Logged-out: Layout renders the Login screen for this path. Logged-in
+          visitors landing on /login are bounced to their workspace. */}
+      <Route path="/login" element={<Navigate to="/" replace />} />
       <Route path="/assistant" element={<Assistant />} />
       <Route path="/customers" element={<Customers />} />
       <Route path="/customers/:id" element={<Customer360 />} />

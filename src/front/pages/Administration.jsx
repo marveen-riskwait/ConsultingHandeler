@@ -88,7 +88,7 @@ const UsersTab = ({ me }) => {
           {lastToken && (
             <div className="alert alert-success py-2 mt-3 mb-0" style={{ fontSize: ".85rem" }}>
               Invitation created. Share this link:{" "}
-              <code>{window.location.origin}/?invite={lastToken}</code>
+              <code>{window.location.origin}/login?invite={lastToken}</code>
             </div>
           )}
         </div>

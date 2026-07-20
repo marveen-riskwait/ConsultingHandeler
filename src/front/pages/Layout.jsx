@@ -1,16 +1,19 @@
 import { useEffect } from "react";
-import { Outlet, useNavigate } from "react-router-dom";
+import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import ScrollToTop from "../components/ScrollToTop";
 import { Sidebar } from "../components/Sidebar";
 import { Login } from "./Login";
+import { Landing } from "./Landing";
 import useGlobalReducer from "../hooks/useGlobalReducer";
 import { api } from "../services/api";
 
-// The whole app is gated: without a session we show the Login screen (no shell).
+// The whole app is gated: logged-out visitors get the public landing page at
+// the root (any other path shows the Login screen — e.g. /login, invite links).
 // Once authenticated we render the dark sidebar + a slim topbar around the page.
 export const Layout = () => {
   const { store, dispatch } = useGlobalReducer();
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     if (store.token && !store.organization) {
@@ -21,7 +24,10 @@ export const Layout = () => {
   }, [store.token]);
 
   if (!store.token) {
-    return <Login />;
+    // Invitation links (?invite=TOKEN) must reach the accept screen, never the
+    // marketing page — including legacy links that point at the root.
+    const isInvite = new URLSearchParams(location.search).has("invite");
+    return location.pathname === "/" && !isInvite ? <Landing /> : <Login />;
   }
 
   const logout = () => { dispatch({ type: "logout" }); navigate("/"); };

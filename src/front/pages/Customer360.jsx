@@ -50,6 +50,15 @@ export const Customer360 = () => {
   const [ownerForm, setOwnerForm] = useState({ owner_name: "", owner_kind: "PERSON", relationship_type: "SHAREHOLDER", percentage: "", country: "" });
   const [addrForm, setAddrForm] = useState({ line1: "", city: "", country: "" });
   const [fieldForm, setFieldForm] = useState({ field_key: "", value: "", source: "manual" });
+  const [kyb, setKyb] = useState(null);
+  const [kybBusy, setKybBusy] = useState(false);
+
+  const runKybLookup = async () => {
+    setKybBusy(true); setError(null);
+    try { setKyb(await api.kybLookup(id)); }
+    catch (e) { setError(e.message); }
+    finally { setKybBusy(false); }
+  };
 
   const load = useCallback(() => api.customer(id).then(setData).catch((e) => setError(e.message)), [id]);
   const loadKyb = useCallback(() => {
@@ -350,6 +359,39 @@ export const Customer360 = () => {
 
         {/* Ownership & UBOs */}
         <div className="col-md-6">
+          {customer.customer_type === "COMPANY" && can(store.user, "kyb.view") && (
+            <div className="co-card" style={{ marginBottom: "1rem" }}>
+              <div className="d-flex justify-content-between align-items-start">
+                <div className="section-title">Company registry (Companies House)</div>
+                <button className="btn btn-sm btn-outline-secondary"
+                  onClick={runKybLookup} disabled={kybBusy}>
+                  <i className="fa-solid fa-building-columns" /> {kybBusy ? "Looking up…" : "Lookup"}
+                </button>
+              </div>
+              {!kyb && (
+                <div className="muted" style={{ fontSize: ".85rem" }}>
+                  Live lookup against the UK register (needs a Companies House API key).
+                </div>
+              )}
+              {kyb && (
+                <div style={{ fontSize: ".88rem" }}>
+                  <div><b>{kyb.data?.company_name}</b> · #{kyb.data?.company_number}
+                    {" "}<span className={`chip ${kyb.status === "PASSED" ? "LOW" : "HIGH"}`}>{kyb.data?.company_status || kyb.status}</span></div>
+                  <div className="muted">
+                    {kyb.data?.company_type} · incorporated {kyb.data?.incorporated_on || "—"}
+                    {kyb.data?.sic_codes?.length ? ` · SIC ${kyb.data.sic_codes.join(", ")}` : ""}
+                  </div>
+                  {kyb.data?.registered_office && <div className="muted">{kyb.data.registered_office}</div>}
+                  {(kyb.data?.officers || []).slice(0, 5).map((o, i) => (
+                    <div className="meta" key={i}>
+                      <i className="fa-solid fa-user-tie muted" /> {o.name} — {o.role}
+                      {o.resigned_on ? " (resigned)" : ""}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <div className="co-card">
             <div className="section-title">Ownership &amp; UBOs</div>
             {ubos.length === 0 && (

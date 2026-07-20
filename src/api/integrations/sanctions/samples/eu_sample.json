@@ -1,0 +1,7 @@
+[
+  {"external_id": "EU.27.28", "name": "LUKASHENKO Aliaksandr Ryhoravich", "entity_type": "INDIVIDUAL", "aliases": ["LUKASHENKO Alexander Grigorievich"], "programs": ["BLR"], "country": "Belarus"},
+  {"external_id": "EU.124.86", "name": "WAGNER GROUP", "entity_type": "ENTITY", "aliases": ["PMC Wagner"], "programs": ["RUS"], "country": "Russia"},
+  {"external_id": "EU.101.71", "name": "PRIGOZHIN Yevgeniy Viktorovich", "entity_type": "INDIVIDUAL", "programs": ["RUS"], "country": "Russia"},
+  {"external_id": "EU.39.63", "name": "SYRIAN SCIENTIFIC STUDIES AND RESEARCH CENTRE", "entity_type": "ENTITY", "aliases": ["SSRC", "CERS"], "programs": ["SYR"], "country": "Syria"},
+  {"external_id": "EU.140.11", "name": "IRAN AIRCRAFT MANUFACTURING INDUSTRIAL COMPANY", "entity_type": "ENTITY", "aliases": ["HESA"], "programs": ["IRN"], "country": "Iran"}
+]

@@ -3,6 +3,7 @@ from api.integrations.providers.mock_adapter import MockKYCProvider, MockKYBProv
 from api.integrations.providers.real_adapters import (
     SumsubKYCProvider, TruliooKYCProvider, ComplyAdvantageAMLProvider,
 )
+from api.integrations.providers.companies_house import CompaniesHouseKYBProvider
 
 ADAPTERS = {
     "mock": MockKYCProvider,          # default KYC
@@ -11,6 +12,7 @@ ADAPTERS = {
     "sumsub": SumsubKYCProvider,
     "trulioo": TruliooKYCProvider,
     "comply_advantage": ComplyAdvantageAMLProvider,
+    "companies_house": CompaniesHouseKYBProvider,
 }
 
 

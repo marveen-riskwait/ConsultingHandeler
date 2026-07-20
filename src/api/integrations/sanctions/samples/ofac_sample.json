@@ -1,0 +1,8 @@
+[
+  {"external_id": "7157", "name": "MADURO MOROS, Nicolas", "entity_type": "INDIVIDUAL", "programs": ["VENEZUELA"], "country": "Venezuela", "remarks": "Public OFAC SDN designation"},
+  {"external_id": "22947", "name": "TORNADO CASH", "entity_type": "ENTITY", "aliases": ["tornado.cash"], "programs": ["CYBER2"], "remarks": "Virtual currency mixer (public OFAC designation)"},
+  {"external_id": "9639", "name": "ISLAMIC REVOLUTIONARY GUARD CORPS", "entity_type": "ENTITY", "aliases": ["IRGC", "PASDARAN"], "programs": ["SDGT", "IRGC"], "country": "Iran"},
+  {"external_id": "6316", "name": "BANK MELLI IRAN", "entity_type": "ENTITY", "aliases": ["BANK MELLI"], "programs": ["IRAN"], "country": "Iran"},
+  {"external_id": "10756", "name": "GUZMAN LOERA, Joaquin Archivaldo", "entity_type": "INDIVIDUAL", "aliases": ["El Chapo"], "programs": ["SDNTK"], "country": "Mexico"},
+  {"external_id": "31234", "name": "SBERBANK OF RUSSIA", "entity_type": "ENTITY", "programs": ["RUSSIA-EO14024"], "country": "Russia"}
+]

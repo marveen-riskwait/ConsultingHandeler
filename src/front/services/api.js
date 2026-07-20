@@ -124,6 +124,13 @@ export const api = {
   revokeInvitation: (id) => request(`/invitations/${id}/revoke`, { method: "POST" }),
   acceptInvitation: (payload) => request("/auth/accept-invitation", { method: "POST", body: payload }),
 
+  // Public watchlists (OFAC / UN / EU) + Companies House
+  watchlists: () => request("/watchlists"),
+  watchlistSearch: (q) => request(`/watchlists/search?q=${encodeURIComponent(q)}`),
+  ingestWatchlists: (source) =>
+    request("/watchlists/ingest", { method: "POST", body: { source: source || "ALL" } }),
+  kybLookup: (id) => request(`/customers/${id}/kyb-lookup`, { method: "POST" }),
+
   // Compliance Copilot (AI assistant)
   assistantMeta: () => request("/assistant/meta"),
   conversations: () => request("/assistant/conversations"),

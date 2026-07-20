@@ -34,7 +34,7 @@ from api.engine import (risk_engine, audit, ownership, data_scope, workload,
                         sla, assignment, party_service, requirement_engine,
                         kyc_service, provider_service, alert_service,
                         review_engine, workflow_engine, regulatory_service,
-                        assistant_service)
+                        assistant_service, watchlist_service)
 from api.engine.screening_service import review_match
 from api.tasks import run_screening
 
@@ -1554,6 +1554,57 @@ def active_risk_methodology(user):
 def run_monitoring(user):
     """Manually trigger the continuous-monitoring sweep (normally on Celery beat)."""
     return jsonify(review_engine.run_monitoring()), 200
+
+
+# ---------------------------------------------------------------------------
+# Public watchlists (OFAC / UN / EU) + Companies House KYB
+# ---------------------------------------------------------------------------
+@api.route("/watchlists", methods=["GET"])
+@permission_required("screening.view", "regulatory.view")
+def watchlist_stats(user):
+    return jsonify(watchlist_service.stats()), 200
+
+
+@api.route("/watchlists/search", methods=["GET"])
+@permission_required("screening.view", "regulatory.view")
+def watchlist_search(user):
+    q = (request.args.get("q") or "").strip()
+    if len(q) < 3:
+        raise APIException("q must be at least 3 characters", status_code=400)
+    hits = watchlist_service.search(q, limit=25)
+    return jsonify([{**e.serialize(), "score": score} for e, score in hits]), 200
+
+
+@api.route("/watchlists/ingest", methods=["POST"])
+@permission_required("regulatory.manage")
+def watchlist_ingest(user):
+    """Refresh the local copy of the public sanctions lists."""
+    body = request.get_json(silent=True) or {}
+    source = (body.get("source") or "ALL").upper()
+    prefer_live = body.get("live", True)
+    limit = body.get("limit")
+    if source == "ALL":
+        imports = watchlist_service.ingest_all(actor=user,
+                                               prefer_live=prefer_live,
+                                               limit=limit)
+    else:
+        imports = [watchlist_service.ingest(source, actor=user,
+                                            prefer_live=prefer_live,
+                                            limit=limit)]
+    return jsonify([i.serialize() for i in imports]), 200
+
+
+@api.route("/customers/<int:cid>/kyb-lookup", methods=["POST"])
+@permission_required("kyb.view")
+def kyb_lookup(user, cid):
+    """Company-registry lookup (Companies House) through the KYB provider."""
+    customer = _get_customer_for(user, cid)
+    try:
+        result = provider_service.verify_customer(customer, actor=user,
+                                                  provider_type="KYB")
+    except RuntimeError as exc:
+        raise APIException(str(exc), status_code=409)
+    return jsonify(result.serialize()), 200
 
 
 # ---------------------------------------------------------------------------

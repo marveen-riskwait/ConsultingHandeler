@@ -499,6 +499,100 @@ const OrganizationTab = ({ me }) => {
   );
 };
 
+// ---------------------------------------------------------------- Watchlists tab
+const WatchlistsTab = ({ me }) => {
+  const [stats, setStats] = useState([]);
+  const [query, setQuery] = useState("");
+  const [hits, setHits] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  const load = useCallback(() => {
+    api.watchlists().then(setStats).catch((e) => setError(e.message));
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const refresh = async () => {
+    setBusy(true); setError(null);
+    try { await api.ingestWatchlists("ALL"); load(); }
+    catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const search = async (e) => {
+    e.preventDefault();
+    setError(null);
+    try { setHits(await api.watchlistSearch(query)); }
+    catch (e2) { setError(e2.message); }
+  };
+
+  const canIngest = can(me, "regulatory.manage");
+
+  return (
+    <>
+      {error && <div className="alert alert-danger py-2">{error}</div>}
+
+      <div className="co-card">
+        <div className="d-flex justify-content-between align-items-start">
+          <div>
+            <div className="section-title">Public sanctions lists</div>
+            <p className="muted" style={{ fontSize: ".85rem" }}>
+              Local copy of the free public lists, screened on every customer
+              (no vendor required). Refresh pulls live from the source; when the
+              network blocks it, a bundled sample of real entries is loaded.
+            </p>
+          </div>
+          {canIngest && (
+            <button className="btn btn-co btn-sm" onClick={refresh} disabled={busy}>
+              <i className="fa-solid fa-rotate" /> {busy ? "Ingesting…" : "Refresh now"}
+            </button>
+          )}
+        </div>
+        <table className="table table-sm align-middle" style={{ marginTop: ".5rem" }}>
+          <thead><tr className="muted"><th>Source</th><th>Records</th><th>Last import</th><th>Mode</th><th>Status</th></tr></thead>
+          <tbody>
+            {stats.map((s) => (
+              <tr key={s.source}>
+                <td><b>{s.label}</b></td>
+                <td>{s.record_count}</td>
+                <td className="muted">{s.last_import ? new Date(s.last_import.started_at).toLocaleString() : "never"}</td>
+                <td>{s.last_import ? (s.last_import.live
+                  ? <span className="chip LOW">LIVE</span>
+                  : <span className="chip MEDIUM">SAMPLE</span>) : "—"}</td>
+                <td className="muted">{s.last_import?.detail || "Run an import to load this list."}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="co-card">
+        <div className="section-title">Search the watchlist</div>
+        <form className="d-flex gap-2" onSubmit={search}>
+          <input className="form-control" placeholder="Name to check (person or company)…"
+            value={query} onChange={(e) => setQuery(e.target.value)} />
+          <button className="btn btn-co" disabled={query.trim().length < 3}>Search</button>
+        </form>
+        {hits && hits.length === 0 && <div className="empty">No watchlist entries match.</div>}
+        {hits && hits.map((h) => (
+          <div className="work-row" key={`${h.source}-${h.external_id}`}>
+            <span className="dotsev CRITICAL" />
+            <div className="grow">
+              <div className="title">{h.name} <span className="muted">({h.entity_type})</span></div>
+              <div className="meta">
+                {h.source} · {h.programs?.join(", ") || "no programme"}
+                {h.country ? ` · ${h.country}` : ""}
+                {h.aliases?.length ? ` · aka ${h.aliases.slice(0, 3).join(", ")}` : ""}
+              </div>
+            </div>
+            <span className="chip HIGH">score {h.score}</span>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+};
+
 // ---------------------------------------------------------------- Page
 export const Administration = () => {
   const { store } = useGlobalReducer();
@@ -509,6 +603,7 @@ export const Administration = () => {
     { key: "roles", label: "Roles & Permissions", icon: "fa-shield-halved", permission: "role.view" },
     { key: "risk", label: "Risk Model", icon: "fa-gauge-high", permission: "risk.view" },
     { key: "integrations", label: "Integrations", icon: "fa-plug", permission: "organization.view" },
+    { key: "watchlists", label: "Watchlists", icon: "fa-list-check", permission: "regulatory.view" },
     { key: "organization", label: "Organization", icon: "fa-building", permission: "organization.view" },
   ].filter((t) => can(me, t.permission));
   const [tab, setTab] = useState(tabs.length ? tabs[0].key : null);
@@ -534,6 +629,7 @@ export const Administration = () => {
       {tab === "roles" && <RolesTab />}
       {tab === "risk" && <RiskModelTab />}
       {tab === "integrations" && <IntegrationsTab me={me} />}
+      {tab === "watchlists" && <WatchlistsTab me={me} />}
       {tab === "organization" && <OrganizationTab me={me} />}
     </>
   );

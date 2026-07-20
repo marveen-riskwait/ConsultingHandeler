@@ -1,0 +1,6 @@
+[
+  {"external_id": "QDe.004", "name": "AL-QAIDA", "entity_type": "ENTITY", "aliases": ["Al Qaeda", "The Base"], "programs": ["Al-Qaida"]},
+  {"external_id": "QDe.115", "name": "ISLAMIC STATE IN IRAQ AND THE LEVANT", "entity_type": "ENTITY", "aliases": ["ISIL", "Daesh", "ISIS"], "programs": ["Al-Qaida"]},
+  {"external_id": "TAe.001", "name": "HARAKAT-I INQILAB-I ISLAMI-YI AFGHANISTAN", "entity_type": "ENTITY", "programs": ["Taliban"]},
+  {"external_id": "KPe.001", "name": "KOREA MINING DEVELOPMENT TRADING CORPORATION", "entity_type": "ENTITY", "aliases": ["KOMID"], "programs": ["DPRK"], "country": "Democratic People's Republic of Korea"}
+]

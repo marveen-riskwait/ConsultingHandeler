@@ -65,9 +65,19 @@ def verify_customer(customer, actor=None, provider_type="KYC"):
         raise RuntimeError(f"No enabled {provider_type} provider configured")
 
     adapter = get_adapter(provider)
-    normalized = adapter.create_verification(
-        {"name": customer.name, "customer_id": customer.id,
-         "type": customer.customer_type})
+    subject = {"name": customer.name, "customer_id": customer.id,
+               "type": customer.customer_type}
+    if provider.provider_type == "KYB":
+        # KYB adapters take the business entity (registry lookup); pass the
+        # registration number when the KYC profile has captured one.
+        from api.models import ProfileField
+        reg = (ProfileField.query
+               .filter_by(customer_id=customer.id, field_key="registration_number")
+               .first())
+        subject["registration_number"] = reg.value if reg else None
+        normalized = adapter.verify_business(subject)
+    else:
+        normalized = adapter.create_verification(subject)
     result = store_result(customer.organization_id, customer.id, normalized)
 
     audit.record("PROVIDER_VERIFICATION", "customer", customer.id, actor=actor,

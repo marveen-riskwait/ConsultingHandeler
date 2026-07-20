@@ -394,6 +394,9 @@ def _seed_providers(org):
          [("webhook_secret", "demo-secret")]),
         ("Sumsub", "KYC", "sumsub", False, []),
         ("ComplyAdvantage", "AML", "comply_advantage", False, []),
+        # Real UK registry lookups; enabled because the adapter reports a clear
+        # error until an api_key credential (or COMPANIES_HOUSE_API_KEY) is set.
+        ("Companies House", "KYB", "companies_house", True, []),
     ]
     for name, ptype, adapter, enabled, creds in specs:
         provider = Provider.query.filter_by(name=name, organization_id=org.id).first()
@@ -574,6 +577,27 @@ def setup_commands(app):
                    "Sumsub + ComplyAdvantage stubs (disabled, need credentials).")
         click.echo("Done. Log in and run screening on 'John Smith' or "
                    "'Sergei Ivanov' to see the full chain fire.")
+
+    @app.cli.command("ingest-watchlists")
+    @click.option("--source", default="ALL",
+                  help="OFAC, UN, EU or ALL (default).")
+    @click.option("--sample", is_flag=True, default=False,
+                  help="Skip the live fetch and load the bundled samples.")
+    @click.option("--limit", default=None, type=int,
+                  help="Cap records per source (handy for quick local runs).")
+    def ingest_watchlists(source, sample, limit):
+        """Download the public sanctions lists (OFAC SDN / UN / EU) into the
+        local watchlist used for screening."""
+        from api.engine import watchlist_service
+        prefer_live = not sample
+        if source.upper() == "ALL":
+            imports = watchlist_service.ingest_all(prefer_live=prefer_live,
+                                                   limit=limit)
+        else:
+            imports = [watchlist_service.ingest(source, prefer_live=prefer_live,
+                                                limit=limit)]
+        for imp in imports:
+            click.echo(f"{imp.source}: {imp.status} — {imp.detail}")
 
     @app.cli.command("insert-test-data")
     def insert_test_data():

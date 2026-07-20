@@ -89,7 +89,7 @@ def register():
         db.session.add(org)
         db.session.flush()
     if is_new_org:
-        role_name = "ORGANIZATION_ADMIN"
+        role_name = "ADMIN"   # first user of a new org is its administrator
 
     from api.rbac import get_role
     role = get_role(role_name)

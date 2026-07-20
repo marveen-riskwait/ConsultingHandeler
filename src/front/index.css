@@ -1,11 +1,18 @@
 :root {
-  --co-bg: #f4f5f9;
+  --co-bg: #f6f7f9;
   --co-surface: #ffffff;
-  --co-border: #e6e8f0;
-  --co-ink: #1f2430;
+  --co-border: #e7e9ee;
+  --co-ink: #131722;
   --co-muted: #6b7280;
-  --co-primary: #4f46e5;
-  --co-primary-dark: #4338ca;
+  --co-primary: #111a2e;        /* navy CTA */
+  --co-primary-dark: #0a101d;
+
+  --co-sidebar: #0f1729;        /* dark navy sidebar */
+  --co-sidebar-ink: #aab4c5;
+  --co-sidebar-active: rgba(255,255,255,.09);
+  --co-sidebar-w: 236px;
+
+  --serif: "Source Serif 4", "Iowan Old Style", "Palatino Linotype", Georgia, "Times New Roman", serif;
 
   --sev-critical: #dc2626;
   --sev-high: #ea580c;
@@ -25,31 +32,68 @@ body {
 
 a { text-decoration: none; }
 
-/* ---- Layout ---- */
-.co-app { min-height: 100vh; }
-.co-nav {
-  background: #111827;
-  color: #fff;
-  padding: 0 1.25rem;
-  height: 58px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+/* Elegant serif for display headings (Lovable-inspired). */
+h1, h2, h3, h4, .co-serif {
+  font-family: var(--serif);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* ---- App shell: dark sidebar + main ---- */
+.co-app { min-height: 100vh; display: flex; }
+
+.co-sidebar {
+  width: var(--co-sidebar-w);
+  min-width: var(--co-sidebar-w);
+  background: var(--co-sidebar);
+  color: var(--co-sidebar-ink);
   position: sticky;
   top: 0;
-  z-index: 20;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: 1rem .75rem;
 }
-.co-nav .brand { font-weight: 700; letter-spacing: .3px; color: #fff; display: flex; align-items: center; gap: .5rem; }
-.co-nav .brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--co-primary); box-shadow: 0 0 0 4px rgba(79,70,229,.25); }
-.co-nav a.navlink {
-  color: #c7cbd6;
-  padding: .4rem .75rem;
-  border-radius: 8px;
-  font-size: .92rem;
-  font-weight: 500;
+.co-sidebar-brand {
+  display: flex; align-items: center; gap: .55rem;
+  color: #fff; font-weight: 700; letter-spacing: .2px;
+  padding: .4rem .55rem 1rem;
 }
-.co-nav a.navlink.active, .co-nav a.navlink:hover { color: #fff; background: rgba(255,255,255,.08); }
+.co-sidebar-brand .dot { width: 11px; height: 11px; border-radius: 50%; background: #6366f1; box-shadow: 0 0 0 4px rgba(99,102,241,.25); }
+.co-sidebar-group { font-size: .68rem; text-transform: uppercase; letter-spacing: .12em; color: #5b6577; padding: .25rem .6rem .4rem; }
+.co-sidebar-nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.co-sidebar-link {
+  display: flex; align-items: center; gap: .7rem;
+  color: var(--co-sidebar-ink);
+  padding: .5rem .6rem; border-radius: 9px;
+  font-size: .9rem; font-weight: 500;
+}
+.co-sidebar-link i { width: 18px; text-align: center; font-size: .95rem; opacity: .85; }
+.co-sidebar-link:hover { color: #fff; background: rgba(255,255,255,.05); }
+.co-sidebar-link.active { color: #fff; background: var(--co-sidebar-active); }
+.co-sidebar-foot { padding: .6rem .3rem 0; border-top: 1px solid rgba(255,255,255,.07); }
+.co-role-badge {
+  display: inline-block; font-size: .66rem; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: #cbd5e1;
+  background: rgba(255,255,255,.08); padding: .28rem .55rem; border-radius: 6px;
+}
 
+.co-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.co-topbar {
+  height: 56px; background: var(--co-surface); border-bottom: 1px solid var(--co-border);
+  display: flex; align-items: center; justify-content: flex-end; gap: .9rem;
+  padding: 0 1.5rem; position: sticky; top: 0; z-index: 20;
+}
+.co-user { display: flex; align-items: center; gap: .55rem; }
+.co-user-name { font-size: .88rem; font-weight: 600; }
+.co-avatar {
+  width: 30px; height: 30px; border-radius: 50%; background: var(--co-primary);
+  color: #fff; display: inline-flex; align-items: center; justify-content: center;
+  font-size: .72rem; font-weight: 700;
+}
+.co-content { max-width: 1180px; width: 100%; margin: 0 auto; padding: 1.75rem 1.75rem 4rem; }
+
+/* legacy container kept for the not-found element */
 .co-container { max-width: 1080px; margin: 0 auto; padding: 1.75rem 1.25rem 4rem; }
 
 /* ---- Cards ---- */
@@ -58,6 +102,7 @@ a { text-decoration: none; }
   border: 1px solid var(--co-border);
   border-radius: 14px;
   padding: 1.15rem 1.25rem;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
 }
 .co-card + .co-card { margin-top: 1rem; }
 .co-card h2, .co-card h3 { margin-top: 0; }

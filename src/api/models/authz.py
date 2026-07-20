@@ -189,9 +189,12 @@ DEFAULT_ROLE_PERMISSIONS = {
         "audit.view", "customer.view",
     ],
 
-    "ORGANIZATION_ADMIN": _ADMIN_CORE,
-    "PLATFORM_ADMIN": _ADMIN_CORE,
-    "ADMIN": _ADMIN_CORE,  # back-compat alias
+    # Single canonical administrator role. ORGANIZATION_ADMIN / PLATFORM_ADMIN
+    # are kept only as back-compat aliases for pre-existing databases and are no
+    # longer offered in the UI or the seed.
+    "ADMIN": _ADMIN_CORE,
+    "ORGANIZATION_ADMIN": _ADMIN_CORE,   # deprecated alias
+    "PLATFORM_ADMIN": _ADMIN_CORE,       # deprecated alias
 }
 
 

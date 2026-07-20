@@ -5,7 +5,7 @@ import { can } from "../permissions/can";
 
 const ROLE_OPTIONS = [
   "KYC_ANALYST", "SENIOR_ANALYST", "COMPLIANCE_OFFICER", "COMPLIANCE_MANAGER",
-  "MLRO", "AUDITOR", "REGULATORY_MANAGER", "ORGANIZATION_ADMIN", "CUSTOMER_USER",
+  "MLRO", "AUDITOR", "REGULATORY_MANAGER", "ADMIN", "CUSTOMER_USER",
 ];
 
 // ---------------------------------------------------------------- Users tab

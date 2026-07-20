@@ -528,7 +528,7 @@ def setup_commands(app):
             ("analyst@demo.io", "Alex Analyst", "KYC_ANALYST"),
             ("officer@demo.io", "Olivia Officer", "COMPLIANCE_OFFICER"),
             ("manager@demo.io", "Mia Manager", "COMPLIANCE_MANAGER"),
-            ("admin@demo.io", "Sam Admin", "ORGANIZATION_ADMIN"),
+            ("admin@demo.io", "Sam Admin", "ADMIN"),
         ]
         for email, name, role_name in demo_users:
             role = get_role(role_name)

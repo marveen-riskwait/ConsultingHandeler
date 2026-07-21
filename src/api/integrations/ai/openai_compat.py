@@ -29,6 +29,11 @@ class OpenAICompatProvider(LLMProvider):
         self.max_tokens = int(os.getenv("AI_MAX_TOKENS", "3000"))
 
     def complete(self, system, messages):
+        if not self.api_key:
+            raise RuntimeError(
+                "OPENAI_API_KEY is not set. Add it to .env (any OpenAI-"
+                "compatible backend key works — OpenAI, Groq, OpenRouter, "
+                "Ollama) and restart the backend.")
         payload = {
             "model": self.model,
             "max_tokens": self.max_tokens,

@@ -25,6 +25,11 @@ class GeminiProvider(LLMProvider):
         self.max_tokens = int(os.getenv("AI_MAX_TOKENS", "3000"))
 
     def complete(self, system, messages):
+        if not self.api_key:
+            raise RuntimeError(
+                "GEMINI_API_KEY is not set. Get a free key at "
+                "https://aistudio.google.com and add it to .env "
+                "(then restart the backend).")
         # Gemini calls the assistant role "model".
         contents = [{"role": "model" if m["role"] == "assistant" else "user",
                      "parts": [{"text": m["content"]}]}

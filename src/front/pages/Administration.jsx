@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import useGlobalReducer from "../hooks/useGlobalReducer";
 import { api } from "../services/api";
-import { can } from "../permissions/can";
+import { can, canAny } from "../permissions/can";
 
 const ROLE_OPTIONS = [
   "KYC_ANALYST", "SENIOR_ANALYST", "COMPLIANCE_OFFICER", "COMPLIANCE_MANAGER",
@@ -649,6 +649,8 @@ const WatchlistsTab = ({ me }) => {
   const [stats, setStats] = useState([]);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState(null);
+  const [walletQuery, setWalletQuery] = useState("");
+  const [wallet, setWallet] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
@@ -671,7 +673,18 @@ const WatchlistsTab = ({ me }) => {
     catch (e2) { setError(e2.message); }
   };
 
+  const checkWallet = async (e) => {
+    e.preventDefault();
+    setError(null); setWallet(null);
+    try { setWallet(await api.screenWallet(walletQuery.trim())); }
+    catch (e2) { setError(e2.message); }
+  };
+
   const canIngest = can(me, "regulatory.manage");
+  // Screening a wallet is a compliance operation, not administration: a
+  // technical admin has no business running it, so the panel is not shown
+  // rather than shown and refused.
+  const canScreen = can(me, "screening.view") || can(me, "screening.run");
 
   return (
     <>
@@ -734,6 +747,41 @@ const WatchlistsTab = ({ me }) => {
           </div>
         ))}
       </div>
+
+      {canScreen && (
+      <div className="co-card">
+        <div className="section-title">Screen a wallet address</div>
+        <p className="muted" style={{ fontSize: ".82rem", marginTop: "-.2rem" }}>
+          OFAC publishes designated blockchain addresses inside the SDN file
+          this platform already downloads. Matching is exact — an address is a
+          checksum, so "close" means a different wallet.
+        </p>
+        <form className="d-flex gap-2" onSubmit={checkWallet}>
+          <input className="form-control" placeholder="Paste a wallet address (BTC, ETH, TRX, USDT…)"
+            value={walletQuery} onChange={(e) => setWalletQuery(e.target.value)} />
+          <button className="btn btn-co" disabled={walletQuery.trim().length < 20}>Check</button>
+        </form>
+        {wallet && !wallet.sanctioned && (
+          <div className="alert alert-success py-2" style={{ marginTop: ".6rem" }}>
+            <i className="fa-solid fa-circle-check" /> No match on the sanctioned
+            wallet list.
+          </div>
+        )}
+        {wallet && wallet.sanctioned && wallet.matches.map((m) => (
+          <div className="work-row" key={m.id}>
+            <span className="dotsev CRITICAL" />
+            <div className="grow">
+              <div className="title">{m.entity_name}</div>
+              <div className="meta">
+                {m.source} · {m.asset} · {m.programs?.join(", ") || "no programme"}
+              </div>
+              <div className="meta" style={{ wordBreak: "break-all" }}>{m.address}</div>
+            </div>
+            <span className="chip CRITICAL">SANCTIONED</span>
+          </div>
+        ))}
+      </div>
+      )}
     </>
   );
 };
@@ -748,9 +796,11 @@ export const Administration = () => {
     { key: "roles", label: "Roles & Permissions", icon: "fa-shield-halved", permission: "role.view" },
     { key: "risk", label: "Risk Model", icon: "fa-gauge-high", permission: "risk.view" },
     { key: "integrations", label: "Integrations", icon: "fa-plug", permission: "organization.view" },
-    { key: "watchlists", label: "Watchlists", icon: "fa-list-check", permission: "regulatory.view" },
+    // Two audiences: admins maintain the lists, analysts screen against them.
+    { key: "watchlists", label: "Watchlists", icon: "fa-list-check",
+      permission: ["regulatory.view", "screening.view", "screening.run"] },
     { key: "organization", label: "Organization", icon: "fa-building", permission: "organization.view" },
-  ].filter((t) => can(me, t.permission));
+  ].filter((t) => canAny(me, t.permission));
   const [tab, setTab] = useState(tabs.length ? tabs[0].key : null);
 
   if (!tabs.length) return <div className="empty">You do not have administration access.</div>;

@@ -188,6 +188,8 @@ export const api = {
   watchlistSearch: (q) => request(`/watchlists/search?q=${encodeURIComponent(q)}`),
   ingestWatchlists: (source) =>
     request("/watchlists/ingest", { method: "POST", body: { source: source || "ALL" } }),
+  screenWallet: (address) =>
+    request(`/watchlists/wallet?address=${encodeURIComponent(address)}`),
   kybLookup: (id) => request(`/customers/${id}/kyb-lookup`, { method: "POST" }),
   enrich: (id) => request(`/customers/${id}/enrich`, { method: "POST" }),
   deletionCheck: (id) => request(`/customers/${id}/deletion-check`),

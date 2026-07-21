@@ -8,18 +8,29 @@ works on the live list too.
 """
 import csv
 import io
+import re
 
 from api.integrations.sanctions.base import (
     SanctionsSource, SanctionsRecord, http_get,
 )
 
 _NULL = "-0-"
+# OFAC publishes sanctioned wallets inside the free-text remarks, one per
+# asset: "Digital Currency Address - XBT 1A1zP1eP...; Digital Currency
+# Address - ETH 0x7F367...". Ignoring them meant the SDN file we already
+# download every day carried wallet data we simply threw away.
+_WALLET = re.compile(r"Digital Currency Address\s*-\s*([A-Z0-9]{2,6})\s+([A-Za-z0-9]{20,120})")
 _TYPE_MAP = {"individual": "INDIVIDUAL", "vessel": "VESSEL", "aircraft": "AIRCRAFT"}
 
 
 def _clean(v):
     v = (v or "").strip()
     return None if v in ("", _NULL) else v
+
+
+def _wallets(remarks):
+    return [{"asset": asset, "address": address}
+            for asset, address in _WALLET.findall(remarks or "")]
 
 
 def _programs(raw):
@@ -72,5 +83,6 @@ class OFACSource(SanctionsSource):
                 aliases=aliases_map.get(ent_num, [])[:20],
                 programs=_programs(row[3]),
                 remarks=_clean(row[11]),
+                wallets=_wallets(row[11]),
             ))
         return records

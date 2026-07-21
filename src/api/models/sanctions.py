@@ -7,7 +7,8 @@ screens customers against them locally. Each import is recorded in
 """
 from datetime import datetime
 
-from sqlalchemy import String, Text, Integer, Boolean, DateTime, JSON, UniqueConstraint
+from sqlalchemy import (String, Text, Integer, Boolean, DateTime, JSON,
+                        UniqueConstraint, ForeignKey)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.models.base import db, utcnow
@@ -80,4 +81,45 @@ class WatchlistImport(db.Model):
             "detail": self.detail,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "finished_at": self.finished_at.isoformat() if self.finished_at else None,
+        }
+
+
+class SanctionedWallet(db.Model):
+    """A blockchain address published on a sanctions list.
+
+    Its own table rather than a field on the entity: screening a wallet is an
+    exact lookup on the address, and a designated entity commonly has dozens of
+    them across several chains.
+    """
+    __tablename__ = "sanctioned_wallet"
+    __table_args__ = (
+        UniqueConstraint("source", "asset", "address_normalized",
+                         name="uq_sanctioned_wallet_addr"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source: Mapped[str] = mapped_column(String(10), nullable=False)
+    asset: Mapped[str] = mapped_column(String(10), nullable=False)   # XBT, ETH, TRX…
+    address: Mapped[str] = mapped_column(String(160), nullable=False)
+    # Lowercased for lookup: ETH addresses are case-insensitive hex, and users
+    # paste addresses in whatever case their explorer showed them.
+    address_normalized: Mapped[str] = mapped_column(
+        String(160), index=True, nullable=False)
+
+    entity_id: Mapped[int] = mapped_column(
+        ForeignKey("sanctioned_entity.id"), nullable=True)
+    entity_name: Mapped[str] = mapped_column(String(400), nullable=True)
+    programs: Mapped[list] = mapped_column(JSON, default=list)
+
+    imported_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    def serialize(self):
+        return {
+            "id": self.id,
+            "source": self.source,
+            "asset": self.asset,
+            "address": self.address,
+            "entity_id": self.entity_id,
+            "entity_name": self.entity_name,
+            "programs": self.programs or [],
         }

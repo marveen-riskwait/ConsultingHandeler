@@ -68,7 +68,7 @@ from api.models.notifications import Notification
 from api.models.audit import AuditEvent
 from api.models.assistant import Conversation, Message, MESSAGE_ROLES
 from api.models.sanctions import (
-    SanctionedEntity, WatchlistImport, SANCTION_SOURCES, SANCTION_ENTITY_TYPES,
+    SanctionedEntity, WatchlistImport, SanctionedWallet, SANCTION_SOURCES, SANCTION_ENTITY_TYPES,
 )
 from api.models.chat import ChatRoom, ChatMember, ChatMessage, CHAT_MESSAGE_KINDS
 
@@ -105,7 +105,7 @@ __all__ = [
     "Case", "Task", "CASE_STATUSES",
     "Notification", "AuditEvent",
     "Conversation", "Message", "MESSAGE_ROLES",
-    "SanctionedEntity", "WatchlistImport",
+    "SanctionedEntity", "WatchlistImport", "SanctionedWallet",
     "SANCTION_SOURCES", "SANCTION_ENTITY_TYPES",
     "ChatRoom", "ChatMember", "ChatMessage", "CHAT_MESSAGE_KINDS",
 ]

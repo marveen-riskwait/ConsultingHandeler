@@ -309,3 +309,64 @@ def test_the_institution_list_is_never_overwritten_by_a_sync(app):
     country_risk.sync(prefer_live=False, institution_countries=["ignored"])
     own = RiskFactor.query.filter_by(code=country_risk.INSTITUTION_CODE).first()
     assert own.condition_value["values"] == ["Russia", "Belarus"]
+
+
+# --- sanctioned wallets ------------------------------------------------------
+
+def test_ofac_wallets_are_extracted_and_screened_exactly(app):
+    """OFAC publishes designated wallets inside the SDN file we already
+    download; they used to be thrown away with the rest of the remarks."""
+    from api.engine import watchlist_service
+    from api.models import SanctionedWallet
+
+    watchlist_service.ingest_all(prefer_live=False)
+    stats = watchlist_service.wallet_stats()
+    assert stats["total"] > 0 and stats["by_asset"]
+
+    wallet = SanctionedWallet.query.first()
+    hits = watchlist_service.screen_wallet(wallet.address)
+    assert hits and hits[0].entity_name == wallet.entity_name
+
+    # Case-insensitive: people paste addresses in whatever case their explorer
+    # showed them, and ETH hex is case-insensitive anyway.
+    assert watchlist_service.screen_wallet(wallet.address.upper())
+    assert watchlist_service.screen_wallet(wallet.address.lower())
+
+
+def test_wallet_screening_is_never_fuzzy(app):
+    """An address is a checksum, not a name: 'close to' a sanctioned wallet is
+    a different wallet, so approximate matching would only invent hits."""
+    from api.engine import watchlist_service
+    from api.models import SanctionedWallet
+
+    watchlist_service.ingest_all(prefer_live=False)
+    wallet = SanctionedWallet.query.first()
+    near_miss = wallet.address[:-1] + ("A" if wallet.address[-1] != "A" else "B")
+    assert watchlist_service.screen_wallet(near_miss) == []
+    assert watchlist_service.screen_wallet("") == []
+    assert watchlist_service.screen_wallet("short") == []
+
+
+def test_wallet_endpoint_reports_the_designated_entity(client, tokens, app):
+    from conftest import auth
+    from api.engine import watchlist_service
+    from api.models import SanctionedWallet
+
+    watchlist_service.ingest_all(prefer_live=False)
+    wallet = SanctionedWallet.query.first()
+    to = tokens["officer@test.io"]
+
+    r = client.get(f"/api/watchlists/wallet?address={wallet.address}",
+                   headers=auth(to))
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["sanctioned"] is True
+    assert body["matches"][0]["entity_name"] == wallet.entity_name
+    assert body["matches"][0]["asset"]
+
+    clean = client.get("/api/watchlists/wallet?address=" + "1" * 34,
+                       headers=auth(to)).get_json()
+    assert clean["sanctioned"] is False and clean["matches"] == []
+
+    assert client.get("/api/watchlists/wallet?address=abc",
+                      headers=auth(to)).status_code == 400

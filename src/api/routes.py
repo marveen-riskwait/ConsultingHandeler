@@ -2059,6 +2059,26 @@ def name_suggestions(user):
     }), 200
 
 
+@api.route("/watchlists/wallet", methods=["GET"])
+@permission_required("screening.run", "screening.view")
+def watchlist_wallet_check(user):
+    """Screen a blockchain address against the sanctioned wallets.
+
+    OFAC publishes designated wallets inside the SDN file the platform already
+    downloads, so this costs nothing extra — and for a crypto client it is the
+    check that actually matters.
+    """
+    address = (request.args.get("address") or "").strip()
+    if len(address) < 20:
+        raise APIException("A full wallet address is required", status_code=400)
+    hits = watchlist_service.screen_wallet(address)
+    return jsonify({
+        "address": address,
+        "sanctioned": bool(hits),
+        "matches": [w.serialize() for w in hits],
+    }), 200
+
+
 @api.route("/watchlists/ingest", methods=["POST"])
 @permission_required("regulatory.manage")
 def watchlist_ingest(user):

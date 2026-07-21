@@ -25,6 +25,9 @@ class SanctionsRecord:
     programs: list = field(default_factory=list)
     country: str = None
     remarks: str = None
+    # [{"asset": "XBT", "address": "1A1zP..."}] — sanctioned wallets, when the
+    # source publishes them (OFAC does, inside the remarks field).
+    wallets: list = field(default_factory=list)
 
 
 def _ssl_context():

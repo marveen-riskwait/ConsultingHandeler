@@ -12,7 +12,8 @@ from difflib import SequenceMatcher
 
 from sqlalchemy import or_, cast, String
 
-from api.models import db, SanctionedEntity, WatchlistImport, utcnow
+from api.models import (db, SanctionedEntity, WatchlistImport,
+                        SanctionedWallet, utcnow)
 from api.engine import audit
 from api.integrations.sanctions import get_source, all_sources
 
@@ -75,6 +76,52 @@ def _fuzzy_score(q, q_tokens, names):
     return best
 
 
+def _upsert_wallets(row, rec):
+    """Persist the sanctioned wallets a record carries (OFAC publishes them)."""
+    for w in (rec.wallets or []):
+        address = (w.get("address") or "").strip()
+        asset = (w.get("asset") or "").strip().upper()
+        if not address or not asset:
+            continue
+        normalized = address.lower()
+        wallet = (SanctionedWallet.query
+                  .filter_by(source=rec.source, asset=asset,
+                             address_normalized=normalized).first())
+        if wallet is None:
+            wallet = SanctionedWallet(source=rec.source, asset=asset,
+                                      address_normalized=normalized)
+            db.session.add(wallet)
+        wallet.address = address[:160]
+        wallet.entity_id = row.id
+        wallet.entity_name = row.name
+        wallet.programs = row.programs or []
+        wallet.imported_at = utcnow()
+
+
+def screen_wallet(address):
+    """Exact lookup of a blockchain address against the sanctioned wallets.
+
+    Exact on purpose: a wallet address is a checksum, not a name. "Close to" a
+    sanctioned address means a different wallet, so fuzziness here would only
+    manufacture false positives.
+    """
+    normalized = (address or "").strip().lower()
+    if len(normalized) < 20:
+        return []
+    return (SanctionedWallet.query
+            .filter_by(address_normalized=normalized)
+            .order_by(SanctionedWallet.source).all())
+
+
+def wallet_stats():
+    rows = SanctionedWallet.query.all()
+    by_asset = {}
+    for w in rows:
+        by_asset[w.asset] = by_asset.get(w.asset, 0) + 1
+    return {"total": len(rows),
+            "by_asset": dict(sorted(by_asset.items(), key=lambda kv: -kv[1]))}
+
+
 # ---------------------------------------------------------------------------- ingest
 def ingest(source_code, actor=None, prefer_live=True, limit=None):
     """Ingest one source. Returns the WatchlistImport row."""
@@ -104,6 +151,8 @@ def ingest(source_code, actor=None, prefer_live=True, limit=None):
             row.country = rec.country
             row.remarks = (rec.remarks or None)
             row.imported_at = utcnow()
+            db.session.flush()
+            _upsert_wallets(row, rec)
             count += 1
 
         imp.status = "OK"

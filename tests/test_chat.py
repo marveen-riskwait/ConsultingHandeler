@@ -107,6 +107,30 @@ def test_upload_local_fallback_and_media_message(client, tokens, app):
     assert got.status_code == 200 and got.data == b"fake-voice-note"
 
 
+def test_upload_falls_back_to_local_when_cloudinary_broken(client, tokens,
+                                                           monkeypatch):
+    """A placeholder/invalid CLOUDINARY_URL (the Codespace bug) must never
+    break chat media — the upload silently falls back to local storage."""
+    import cloudinary.uploader
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("Invalid api_key key")
+    monkeypatch.setenv("CLOUDINARY_URL", "cloudinary://placeholder:key@demo")
+    monkeypatch.setattr(cloudinary.uploader, "upload", boom)
+
+    t = tokens["analyst@test.io"]
+    data = {"file": (io.BytesIO(b"pdf-bytes"), "report.pdf", "application/pdf")}
+    r = client.post("/api/chat/upload", headers=auth(t), data=data,
+                    content_type="multipart/form-data")
+    assert r.status_code == 201
+    stored = r.get_json()
+    assert stored["provider"] == "local"
+    assert "Cloudinary failed" in stored.get("note", "")
+    # The fallback file is intact and served.
+    got = client.get(stored["url"])
+    assert got.status_code == 200 and got.data == b"pdf-bytes"
+
+
 def test_socket_auth_and_realtime_message(app, tokens):
     """A socket with a valid JWT connects and receives room broadcasts;
     a bad token is rejected."""

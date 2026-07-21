@@ -14,7 +14,10 @@ export function getSocket() {
   if (socket) return socket; // connecting/reconnecting
   socket = io(BASE || window.location.origin, {
     auth: { token },
-    transports: ["websocket", "polling"],
+    // Polling first, then upgrade: connects reliably everywhere (Codespace
+    // port-forwarding, dev servers where the WS upgrade 500s) and Engine.IO
+    // switches to a real WebSocket only when the upgrade actually works.
+    transports: ["polling", "websocket"],
   });
   return socket;
 }

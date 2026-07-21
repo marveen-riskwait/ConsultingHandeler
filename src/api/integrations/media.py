@@ -27,24 +27,47 @@ def cloudinary_enabled():
     return bool(os.getenv("CLOUDINARY_URL"))
 
 
-def store(file_storage):
-    """Persist an uploaded file. Returns {url, media_type, kind, provider}."""
-    mimetype = file_storage.mimetype or "application/octet-stream"
-    kind = kind_for(mimetype)
-
-    if cloudinary_enabled():
-        import cloudinary
-        import cloudinary.uploader
-        cloudinary.config(secure=True)  # reads CLOUDINARY_URL from env
-        uploaded = cloudinary.uploader.upload(
-            file_storage, resource_type="auto", folder="compliance-os/chat")
-        return {"url": uploaded["secure_url"], "media_type": mimetype,
-                "kind": kind, "provider": "cloudinary"}
-
-    # Local fallback: random unguessable name, original extension kept.
+def _store_local(file_storage, mimetype, kind, note=None):
+    """Random unguessable name, original extension kept."""
     os.makedirs(UPLOADS_DIR, exist_ok=True)
     ext = os.path.splitext(file_storage.filename or "")[1][:10] or ""
     name = uuid.uuid4().hex + ext
     file_storage.save(os.path.join(UPLOADS_DIR, name))
-    return {"url": f"/api/media/{name}", "media_type": mimetype,
-            "kind": kind, "provider": "local"}
+    out = {"url": f"/api/media/{name}", "media_type": mimetype,
+           "kind": kind, "provider": "local"}
+    if note:
+        out["note"] = note
+    return out
+
+
+def store(file_storage):
+    """Persist an uploaded file. Returns {url, media_type, kind, provider}.
+
+    Cloudinary failures (bad/placeholder credentials, network) fall back to
+    local storage instead of failing the message — a misconfigured .env must
+    never break chat media.
+    """
+    mimetype = file_storage.mimetype or "application/octet-stream"
+    kind = kind_for(mimetype)
+
+    if cloudinary_enabled():
+        try:
+            import cloudinary
+            import cloudinary.uploader
+            cloudinary.config(secure=True)  # reads CLOUDINARY_URL from env
+            uploaded = cloudinary.uploader.upload(
+                file_storage, resource_type="auto", folder="compliance-os/chat")
+            return {"url": uploaded["secure_url"], "media_type": mimetype,
+                    "kind": kind, "provider": "cloudinary"}
+        except Exception as exc:
+            # The stream may be partially consumed by the failed attempt.
+            try:
+                file_storage.stream.seek(0)
+            except Exception:
+                pass
+            return _store_local(
+                file_storage, mimetype, kind,
+                note=f"Cloudinary failed ({type(exc).__name__}: {exc}) — "
+                     "stored locally. Check CLOUDINARY_URL in .env.")
+
+    return _store_local(file_storage, mimetype, kind)

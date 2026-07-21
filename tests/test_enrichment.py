@@ -150,3 +150,112 @@ def test_gleif_and_sirene_parsers(monkeypatch):
     assert out["ok"] and out["fields"]["registration_number"]["value"] == "123456789"
     assert out["parties"][0]["name"] == "Jean Martin"
     assert out["parties"][0]["relationship_type"] == "DIRECTOR"
+
+
+# --- VIES (EU VAT) and SEC EDGAR --------------------------------------------
+
+def test_vat_parsing_rejects_things_that_are_not_vat_numbers():
+    """Without a prefix whitelist, 'notavat' parses as country NO — which would
+    send a nonsense lookup to VIES and read the answer as a finding."""
+    from api.integrations.enrichment.vies import split_vat
+
+    assert split_vat("LU26375245") == ("LU", "26375245")
+    assert split_vat("LU 263 752-45") == ("LU", "26375245")
+    assert split_vat("EL123456789") == ("EL", "123456789")   # Greece files as EL
+    assert split_vat("notavat") is None
+    assert split_vat("GR123456789") is None                  # GR is not a prefix
+    assert split_vat("") is None
+    assert split_vat(None) is None
+
+
+def test_vies_without_a_vat_number_says_so_instead_of_failing(app):
+    from api.integrations.enrichment.vies import ViesSource
+    from api.models import Customer
+
+    customer = Customer(name="Some Co", customer_type="COMPANY",
+                        organization_id=1)
+    out = ViesSource().run(customer, context={"fields": {}})
+    assert out["ok"] is False
+    assert "vat" in out["detail"].lower()
+
+
+def test_vies_rejection_is_a_finding_not_a_failure(app, monkeypatch):
+    """A VAT number the customer declared that VIES does not recognise
+    contradicts the file — that is a result worth recording, not an error."""
+    from api.integrations.enrichment import vies
+    from api.models import Customer
+
+    monkeypatch.setattr(vies, "get_json", lambda url, headers=None: {"isValid": False})
+    customer = Customer(name="Ghost SARL", customer_type="COMPANY",
+                        organization_id=1)
+    out = vies.ViesSource().run(customer, context={"fields": {"vat_number": "LU12345678"}})
+    assert out["ok"] is True
+    assert out["fields"]["vat_valid"]["value"] == "No"
+    assert "NOT registered" in out["detail"]
+
+
+def test_vies_valid_number_fills_legal_name_and_address(app, monkeypatch):
+    from api.integrations.enrichment import vies
+    from api.models import Customer
+
+    monkeypatch.setattr(vies, "get_json", lambda url, headers=None: {
+        "isValid": True, "name": "AMAZON EUROPE CORE S.A R.L.",
+        "address": "38, AVENUE JOHN F. KENNEDY\nL-1855  LUXEMBOURG"})
+    customer = Customer(name="Amazon Europe Core", customer_type="COMPANY",
+                        organization_id=1)
+    out = vies.ViesSource().run(customer,
+                                context={"fields": {"vat_number": "LU26375245"}})
+    assert out["fields"]["vat_valid"]["value"] == "Yes"
+    assert out["fields"]["legal_name"]["value"] == "AMAZON EUROPE CORE S.A R.L."
+    assert "JOHN F. KENNEDY" in out["fields"]["registered_office"]["value"]
+
+
+def test_sec_edgar_maps_a_filer_to_registration_details(app, monkeypatch):
+    from api.integrations.enrichment import sec_edgar
+    from api.models import Customer
+
+    def fake_get(url, headers=None):
+        if "company_tickers" in url:
+            return {"0": {"cik_str": 320193, "ticker": "AAPL", "title": "Apple Inc."}}
+        return {"name": "Apple Inc.", "sicDescription": "Electronic Computers",
+                "stateOfIncorporation": "CA",
+                "addresses": {"business": {"street1": "ONE APPLE PARK WAY",
+                                           "city": "CUPERTINO",
+                                           "stateOrCountry": "CA",
+                                           "zipCode": "95014"}}}
+    monkeypatch.setattr(sec_edgar, "get_json", fake_get)
+
+    customer = Customer(name="Apple Inc.", customer_type="COMPANY",
+                        organization_id=1)
+    out = sec_edgar.SecEdgarSource().run(customer)
+    assert out["ok"] is True
+    assert out["fields"]["sec_cik"]["value"] == "320193"
+    assert out["fields"]["country_of_incorporation"]["value"] == "US-CA"
+    assert "CUPERTINO" in out["fields"]["registered_office"]["value"]
+
+
+def test_sec_edgar_reports_a_miss_rather_than_guessing(app, monkeypatch):
+    from api.integrations.enrichment import sec_edgar
+    from api.models import Customer
+
+    monkeypatch.setattr(sec_edgar, "get_json",
+                        lambda url, headers=None: {"0": {"cik_str": 1,
+                                                         "title": "Zzz Corp"}})
+    customer = Customer(name="Bakery Of Luxembourg", customer_type="COMPANY",
+                        organization_id=1)
+    out = sec_edgar.SecEdgarSource().run(customer)
+    assert out["ok"] is False and "No SEC filer" in out["detail"]
+
+
+def test_new_sources_are_registered_for_companies(app):
+    from api.integrations.enrichment import sources_for
+    from api.models import Customer
+
+    company = Customer(name="Any Co", customer_type="COMPANY", organization_id=1)
+    names = {s.name for s in sources_for(company)}
+    assert {"vies", "sec_edgar"} <= names
+
+    person = Customer(name="Marie Dupont", customer_type="INDIVIDUAL",
+                      organization_id=1)
+    person_names = {s.name for s in sources_for(person)}
+    assert "vies" not in person_names and "sec_edgar" not in person_names

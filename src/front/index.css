@@ -267,7 +267,25 @@ h1, h2, h3, h4, .co-serif {
 .ch-audio { max-width: 240px; height: 36px; }
 .ch-video { max-width: 300px; border-radius: 8px; display: block; }
 .ch-image { max-width: 240px; border-radius: 8px; display: block; }
-.ch-file { color: inherit; text-decoration: underline; }
+.ch-file { color: inherit; text-decoration: underline; background: none;
+  border: none; padding: 0; cursor: pointer; text-align: left; font: inherit; }
+.ch-file-hint { margin-left: .4rem; font-size: .68rem; opacity: .7;
+  text-decoration: none; }
+.ch-search { margin-bottom: .5rem; }
+
+/* ---- In-platform file preview ---- */
+.fp-modal { width: 100%; max-width: 900px; height: 82vh; display: flex;
+  flex-direction: column; padding: 0; overflow: hidden; }
+.fp-head { display: flex; align-items: center; gap: .6rem; flex-shrink: 0;
+  padding: .7rem .9rem; border-bottom: 1px solid var(--co-border); }
+.fp-body { flex: 1; min-height: 0; overflow: auto; padding: .9rem;
+  display: flex; align-items: center; justify-content: center; }
+.fp-frame { width: 100%; height: 100%; border: none; }
+.fp-img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.fp-media { max-width: 100%; max-height: 100%; }
+.fp-audio { width: 100%; }
+.fp-text { width: 100%; height: 100%; margin: 0; overflow: auto;
+  font-size: .8rem; line-height: 1.5; white-space: pre-wrap; }
 
 .ch-composer-wrap { flex-shrink: 0; border-top: 1px solid var(--co-border); }
 .ch-composer { display: flex; gap: .45rem; align-items: center;

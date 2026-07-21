@@ -52,6 +52,16 @@ class Customer(db.Model):
         ForeignKey("party.id", use_alter=True, name="fk_customer_root_party"),
         nullable=True)
 
+    # The staff member this customer deals with ("reference"): the person a
+    # portal user is allowed to message. Falls back to case/task assignees.
+    # use_alter breaks the customer<->user DDL cycle (User.customer_id points
+    # back here) — same treatment as root_party_id; the explicit name matches
+    # migration 212f1a147cb7.
+    relationship_manager_id: Mapped[int] = mapped_column(
+        ForeignKey("user.id", use_alter=True,
+                   name="fk_customer_relationship_manager_id_user"),
+        nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     last_review_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
 
@@ -75,6 +85,7 @@ class Customer(db.Model):
             "has_adverse_media": self.has_adverse_media,
             "complex_ownership": self.complex_ownership,
             "root_party_id": self.root_party_id,
+            "relationship_manager_id": self.relationship_manager_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "last_review_at": self.last_review_at.isoformat() if self.last_review_at else None,
         }

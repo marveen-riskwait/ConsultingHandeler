@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import useGlobalReducer from "../hooks/useGlobalReducer";
 import { api } from "../services/api";
 import { getSocket } from "../services/socket";
+import { FilePreview } from "../components/FilePreview";
 
 const BASE = (import.meta.env.VITE_BACKEND_URL || "").replace(/\/$/, "");
 const mediaSrc = (url) => (url && url.startsWith("/") ? `${BASE}${url}` : url);
@@ -25,10 +26,14 @@ const fmtTime = (iso) =>
   new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 
 // ------------------------------------------------------------ message bubble
-const Bubble = ({ m, mine }) => {
+const Bubble = ({ m, mine, onPreview }) => {
   if (m.kind === "SYSTEM" || m.kind === "CALL") {
     return <div className="ch-system">{m.body}</div>;
   }
+  const open = () => onPreview({
+    url: mediaSrc(m.media_url), mediaType: m.media_type,
+    name: m.meta?.filename || m.body || "Attachment",
+  });
   return (
     <div className={`ch-msg ${mine ? "mine" : ""}`}>
       <div className="ch-bubble">
@@ -41,15 +46,14 @@ const Bubble = ({ m, mine }) => {
           <video controls src={mediaSrc(m.media_url)} className="ch-video" />
         )}
         {m.kind === "IMAGE" && (
-          <a href={mediaSrc(m.media_url)} target="_blank" rel="noreferrer">
-            <img src={mediaSrc(m.media_url)} alt="" className="ch-image" />
-          </a>
+          <img src={mediaSrc(m.media_url)} alt="" className="ch-image"
+            style={{ cursor: "zoom-in" }} onClick={open} />
         )}
         {m.kind === "FILE" && (
-          <a href={mediaSrc(m.media_url)} target="_blank" rel="noreferrer"
-            className="ch-file">
-            <i className="fa-solid fa-paperclip" /> {m.body || "Attachment"}
-          </a>
+          <button type="button" className="ch-file" onClick={open}>
+            <i className="fa-solid fa-file-lines" /> {m.body || "Attachment"}
+            <span className="ch-file-hint">open</span>
+          </button>
         )}
         {m.body && m.kind !== "TEXT" && m.kind !== "FILE" && (
           <div style={{ marginTop: ".25rem" }}>{m.body}</div>
@@ -79,6 +83,9 @@ export const Chat = () => {
   // only when the user confirms — never immediately.
   const [pending, setPending] = useState(null); // {file, kind, url, name, size}
   const [sending, setSending] = useState(false);
+  const [preview, setPreview] = useState(null);  // in-platform file viewer
+  const [roomSearch, setRoomSearch] = useState("");
+  const [dirSearch, setDirSearch] = useState("");
 
   // Call state. peersRef: user_id -> RTCPeerConnection.
   const [call, setCall] = useState(null);          // {roomId, media, joined}
@@ -418,6 +425,10 @@ export const Chat = () => {
         </button>
       </div>
 
+      {preview && (
+        <FilePreview {...preview} onClose={() => setPreview(null)} />
+      )}
+
       {error && <div className="alert alert-danger py-2">{error}</div>}
 
       {incoming && (
@@ -434,21 +445,43 @@ export const Chat = () => {
           <div className="row g-3">
             <div className="col-md-5">
               <div className="section-title">Direct message</div>
-              {colleagues.map((c) => (
+              <input className="form-control form-control-sm"
+                placeholder="Search colleagues or customers…"
+                value={dirSearch} onChange={(e) => setDirSearch(e.target.value)}
+                style={{ marginBottom: ".4rem" }} />
+              {colleagues
+                .filter((c) => {
+                  const q = dirSearch.trim().toLowerCase();
+                  if (!q) return true;
+                  return [c.full_name, c.email, c.customer_name]
+                    .some((v) => (v || "").toLowerCase().includes(q));
+                })
+                .map((c) => (
                 <div className="work-row" key={c.id} style={{ cursor: "pointer" }}
                   onClick={() => startDm(c.id)}>
                   <span className="co-avatar" style={{ width: 26, height: 26, fontSize: ".62rem" }}>
                     {(c.full_name || c.email)[0].toUpperCase()}
                   </span>
                   <div className="grow">
-                    <div className="title">{c.full_name || c.email}</div>
-                    <div className="meta">{c.role.replace(/_/g, " ")}</div>
+                    <div className="title">
+                      {c.full_name || c.email}
+                      {c.is_portal_user && <span className="chip INFO" style={{ marginLeft: ".35rem" }}>customer</span>}
+                    </div>
+                    <div className="meta">
+                      {c.customer_name || c.role.replace(/_/g, " ")}
+                    </div>
                   </div>
                   <i className="fa-solid fa-comment muted" />
                 </div>
               ))}
+              {colleagues.length === 0 && (
+                <div className="empty" style={{ fontSize: ".82rem" }}>
+                  No contacts available yet.
+                </div>
+              )}
             </div>
-            <div className="col-md-7">
+            {/* Customers only get direct messages with their reference. */}
+            <div className="col-md-7" hidden={store.user?.is_portal_user}>
               <div className="section-title">New group</div>
               <form onSubmit={createGroup}>
                 <input className="form-control form-control-sm" placeholder="Group name…"
@@ -482,8 +515,19 @@ export const Chat = () => {
       <div className="ch-layout">
         {/* Room list */}
         <aside className="co-card ch-rooms">
+          <input className="form-control form-control-sm ch-search"
+            placeholder="Search conversations…" value={roomSearch}
+            onChange={(e) => setRoomSearch(e.target.value)} />
           {rooms.length === 0 && <div className="empty">No conversations yet.</div>}
-          {rooms.map((r) => (
+          {rooms
+            .filter((r) => {
+              const q = roomSearch.trim().toLowerCase();
+              if (!q) return true;
+              return (r.display_name || "").toLowerCase().includes(q)
+                || (r.members || []).some((m) =>
+                  (m.full_name || m.email || "").toLowerCase().includes(q));
+            })
+            .map((r) => (
             <button key={r.id}
               className={"ch-room" + (r.id === activeId ? " active" : "")}
               onClick={() => openRoom(r.id)}>
@@ -579,7 +623,8 @@ export const Chat = () => {
 
               <div className="ch-messages" ref={scrollRef}>
                 {messages.map((m) => (
-                  <Bubble key={m.id} m={m} mine={m.sender_id === myId} />
+                  <Bubble key={m.id} m={m} mine={m.sender_id === myId}
+                    onPreview={setPreview} />
                 ))}
                 {typing && <div className="ch-typing">{typing} is typing…</div>}
               </div>

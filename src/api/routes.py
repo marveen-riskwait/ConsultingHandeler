@@ -1650,12 +1650,11 @@ def _room_summary(room, user):
 @api.route("/chat/users", methods=["GET"])
 @permission_required("workspace.view")
 def chat_users(user):
-    """Colleagues you can start a chat with (active users of the org)."""
-    users = (User.query
-             .filter_by(organization_id=user.organization_id, is_active=True)
-             .filter(User.id != user.id).all())
-    return jsonify([{"id": u.id, "full_name": u.full_name, "email": u.email,
-                     "role": u.role} for u in users]), 200
+    """Who this user may chat with. Staff see colleagues + customers; a
+    customer portal user sees only their reference contacts."""
+    from api.engine import chat_directory
+    return jsonify(chat_directory.directory(
+        user, query=request.args.get("q"))), 200
 
 
 @api.route("/chat/rooms", methods=["GET"])
@@ -1678,12 +1677,18 @@ def create_chat_room(user):
     from api.sockets import socketio as sio
     body = request.get_json(silent=True) or {}
 
+    from api.engine import chat_directory
+
     if body.get("user_id"):  # ---- direct message
         other = User.query.get(int(body["user_id"]))
         if other is None or other.organization_id != user.organization_id:
             raise APIException("User not found", status_code=404)
         if other.id == user.id:
             raise APIException("Cannot DM yourself", status_code=400)
+        # Portal users may only reach their reference contacts.
+        if not chat_directory.can_message(user, other):
+            raise APIException("You are not allowed to message this user.",
+                               status_code=403)
         # Reuse the existing DM between these two people.
         for m in ChatMember.query.filter_by(user_id=user.id).all():
             room = m.room
@@ -1697,6 +1702,9 @@ def create_chat_room(user):
                             ChatMember(room_id=room.id, user_id=other.id)])
         member_ids = [user.id, other.id]
     else:  # ---- group
+        if not chat_directory.can_create_group(user):
+            raise APIException("Customer users can only message their "
+                               "reference contact.", status_code=403)
         name = (body.get("name") or "").strip()
         if not name:
             raise APIException("name (group) or user_id (DM) is required",

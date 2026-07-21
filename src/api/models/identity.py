@@ -47,6 +47,15 @@ class User(db.Model):
     organization_id: Mapped[int] = mapped_column(ForeignKey("organization.id"), nullable=False)
     organization: Mapped["Organization"] = relationship(back_populates="users")
 
+    # Portal users (role CUSTOMER_USER) represent a customer: this is the file
+    # they belong to. Staff users leave it NULL.
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customer.id"),
+                                             nullable=True)
+
+    def is_portal_user(self):
+        """A customer-side user — must only ever reach their own contacts."""
+        return self.customer_id is not None or self.role == "CUSTOMER_USER"
+
     # Legacy single role (kept for back-compat / display).
     role_id: Mapped[int] = mapped_column(ForeignKey("role.id"), nullable=True)
     role_obj: Mapped["Role"] = relationship(lazy="selectin", foreign_keys=[role_id])
@@ -98,6 +107,8 @@ class User(db.Model):
             "role": self.role,
             "roles": self.role_names(),
             "organization_id": self.organization_id,
+            "customer_id": self.customer_id,
+            "is_portal_user": self.is_portal_user(),
             "extra_permissions": sorted(p.code for p in self.extra_permissions),
         }
         if with_permissions:

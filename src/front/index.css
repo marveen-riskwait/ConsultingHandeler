@@ -216,6 +216,76 @@ h1, h2, h3, h4, .co-serif {
   flex-wrap: wrap; max-width: 1080px; margin: 0 auto; padding: 1.4rem 1.5rem; font-size: .82rem; }
 .ld-foot .muted { color: #66708a; }
 
+/* ---- Team chat ---- */
+.ch-layout { display: grid; grid-template-columns: 290px 1fr; gap: 1rem; align-items: start; }
+@media (max-width: 860px) { .ch-layout { grid-template-columns: 1fr; } }
+
+.ch-rooms { padding: .6rem; max-height: 74vh; overflow-y: auto; }
+.ch-room {
+  display: flex; align-items: center; gap: .6rem; width: 100%;
+  background: none; border: none; text-align: left; color: var(--co-ink);
+  padding: .55rem .6rem; border-radius: 10px; cursor: pointer;
+}
+.ch-room:hover { background: #f2f4f8; }
+.ch-room.active { background: #eef1f8; }
+.ch-room-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ch-room-name { font-weight: 600; font-size: .88rem; }
+.ch-room-last { color: var(--co-muted); font-size: .76rem; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.ch-unread {
+  background: #6366f1; color: #fff; font-size: .68rem; font-weight: 700;
+  border-radius: 999px; padding: .1rem .45rem; min-width: 20px; text-align: center;
+}
+.ch-nav-badge {
+  margin-left: auto; background: #6366f1; color: #fff; font-size: .66rem;
+  font-weight: 700; border-radius: 999px; padding: .08rem .42rem;
+}
+
+.ch-thread { display: flex; flex-direction: column; height: 74vh; padding: 0; }
+.ch-head { display: flex; align-items: center; gap: .6rem;
+  padding: .8rem 1rem; border-bottom: 1px solid var(--co-border); }
+
+.ch-messages { flex: 1; overflow-y: auto; padding: 1rem;
+  display: flex; flex-direction: column; gap: .45rem; }
+.ch-msg { display: flex; }
+.ch-msg.mine { justify-content: flex-end; }
+.ch-bubble {
+  max-width: 72%; padding: .5rem .7rem; border-radius: 13px; font-size: .89rem;
+  line-height: 1.4; background: #f2f4f8; color: var(--co-ink);
+  border-bottom-left-radius: 4px; position: relative;
+}
+.ch-msg.mine .ch-bubble { background: var(--co-primary); color: #fff;
+  border-bottom-left-radius: 13px; border-bottom-right-radius: 4px; }
+.ch-sender { font-size: .7rem; font-weight: 700; color: #6366f1; margin-bottom: .1rem; }
+.ch-time { display: block; font-size: .64rem; opacity: .6; text-align: right; margin-top: .15rem; }
+.ch-system { text-align: center; color: var(--co-muted); font-size: .74rem; padding: .2rem 0; }
+.ch-typing { color: var(--co-muted); font-size: .76rem; font-style: italic; }
+
+.ch-audio { max-width: 240px; height: 36px; }
+.ch-video { max-width: 300px; border-radius: 8px; display: block; }
+.ch-image { max-width: 240px; border-radius: 8px; display: block; }
+.ch-file { color: inherit; text-decoration: underline; }
+
+.ch-composer { display: flex; gap: .45rem; align-items: center;
+  padding: .7rem .9rem; border-top: 1px solid var(--co-border); }
+.ch-composer .btn { flex-shrink: 0; }
+
+.ch-ringing {
+  display: flex; align-items: center; gap: .8rem; margin-bottom: 1rem;
+  background: var(--co-primary); color: #fff; border-radius: 12px;
+  padding: .7rem 1rem;
+}
+
+.ch-call { background: var(--co-sidebar); padding: .8rem; }
+.ch-call-grid { display: flex; flex-wrap: wrap; gap: .6rem; justify-content: center; }
+.ch-tile { position: relative; width: 220px; aspect-ratio: 4/3;
+  background: #1c2740; border-radius: 10px; overflow: hidden; }
+.ch-tile video { width: 100%; height: 100%; object-fit: cover; }
+.ch-tile-name { position: absolute; left: .5rem; bottom: .35rem; color: #fff;
+  font-size: .7rem; background: rgba(0,0,0,.45); padding: .1rem .45rem;
+  border-radius: 6px; }
+.ch-call-controls { display: flex; gap: .5rem; justify-content: center; margin-top: .7rem; }
+
 /* ---- Special authorizations panel (Admin -> Users) ---- */
 .perm-panel {
   background: #f7f8fb; border: 1px solid var(--co-border); border-radius: 10px;

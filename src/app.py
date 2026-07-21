@@ -12,6 +12,8 @@ from api.models import db
 from api.routes import api
 from api.admin import setup_admin
 from api.commands import setup_commands
+from api.sockets import socketio
+from api.integrations.media import UPLOADS_DIR
 
 # from models import Person
 
@@ -41,6 +43,10 @@ app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY") or os.getenv(
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=12)
 jwt = JWTManager(app)
 
+# Real-time layer (team chat + call signalling). Threading mode: works under
+# the dev server and gunicorn threads; simple-websocket upgrades to real WS.
+socketio.init_app(app, cors_allowed_origins="*", async_mode="threading")
+
 # add the admin
 setup_admin(app)
 
@@ -66,6 +72,13 @@ def sitemap():
         return generate_sitemap(app)
     return send_from_directory(static_file_dir, 'index.html')
 
+# Chat media stored on local disk (no Cloudinary configured). Names are
+# random UUIDs, which is what makes the unauthenticated GET acceptable.
+@app.route('/api/media/<path:name>', methods=['GET'])
+def serve_chat_media(name):
+    return send_from_directory(UPLOADS_DIR, name)
+
+
 # any other endpoint will try to serve it like a static file
 @app.route('/<path:path>', methods=['GET'])
 def serve_any_other_file(path):
@@ -79,4 +92,6 @@ def serve_any_other_file(path):
 # this only runs if `$ python src/main.py` is executed
 if __name__ == '__main__':
     PORT = int(os.environ.get('PORT', 3001))
-    app.run(host='0.0.0.0', port=PORT, debug=True)
+    # socketio.run wraps app.run and serves WebSocket alongside HTTP.
+    socketio.run(app, host='0.0.0.0', port=PORT, debug=True,
+                 allow_unsafe_werkzeug=True)

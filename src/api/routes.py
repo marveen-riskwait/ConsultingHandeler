@@ -23,6 +23,7 @@ from api.models import (
     RiskMethodology, WorkflowDefinition, WorkflowInstance,
     RegulatorySource, RegulatoryRequirement, RegulatoryChange,
     Conversation, Message,
+    ChatRoom, ChatMember, ChatMessage,
     utcnow, ROLES, CUSTOMER_TYPES, PARTY_KINDS, PERMISSION_CATALOG,
 )
 from api.utils import APIException
@@ -1617,6 +1618,183 @@ def active_risk_methodology(user):
 def run_monitoring(user):
     """Manually trigger the continuous-monitoring sweep (normally on Celery beat)."""
     return jsonify(review_engine.run_monitoring()), 200
+
+
+# ---------------------------------------------------------------------------
+# Team chat (rooms, messages, media) — realtime delivery via api.sockets
+# ---------------------------------------------------------------------------
+def _get_membership(user, room_id):
+    member = ChatMember.query.filter_by(room_id=room_id, user_id=user.id).first()
+    if member is None:
+        raise APIException("Room not found", status_code=404)
+    return member
+
+
+def _room_summary(room, user):
+    last = (ChatMessage.query.filter_by(room_id=room.id)
+            .order_by(ChatMessage.id.desc()).first())
+    me = next((m for m in room.members if m.user_id == user.id), None)
+    unread_q = (ChatMessage.query.filter_by(room_id=room.id)
+                .filter(ChatMessage.sender_id != user.id))
+    if me and me.last_read_at:
+        unread_q = unread_q.filter(ChatMessage.created_at > me.last_read_at)
+    return room.serialize(for_user_id=user.id, last_message=last,
+                          unread=unread_q.count())
+
+
+@api.route("/chat/users", methods=["GET"])
+@permission_required("workspace.view")
+def chat_users(user):
+    """Colleagues you can start a chat with (active users of the org)."""
+    users = (User.query
+             .filter_by(organization_id=user.organization_id, is_active=True)
+             .filter(User.id != user.id).all())
+    return jsonify([{"id": u.id, "full_name": u.full_name, "email": u.email,
+                     "role": u.role} for u in users]), 200
+
+
+@api.route("/chat/rooms", methods=["GET"])
+@permission_required("workspace.view")
+def list_chat_rooms(user):
+    memberships = ChatMember.query.filter_by(user_id=user.id).all()
+    rooms = [m.room for m in memberships
+             if m.room.organization_id == user.organization_id]
+    out = [_room_summary(r, user) for r in rooms]
+    # Most recent activity first.
+    out.sort(key=lambda r: (r["last_message"] or {}).get("created_at") or "",
+             reverse=True)
+    return jsonify(out), 200
+
+
+@api.route("/chat/rooms", methods=["POST"])
+@permission_required("workspace.view")
+def create_chat_room(user):
+    """{user_id} -> 1-1 DM (reused if it exists); {name, member_ids} -> group."""
+    from api.sockets import socketio as sio
+    body = request.get_json(silent=True) or {}
+
+    if body.get("user_id"):  # ---- direct message
+        other = User.query.get(int(body["user_id"]))
+        if other is None or other.organization_id != user.organization_id:
+            raise APIException("User not found", status_code=404)
+        if other.id == user.id:
+            raise APIException("Cannot DM yourself", status_code=400)
+        # Reuse the existing DM between these two people.
+        for m in ChatMember.query.filter_by(user_id=user.id).all():
+            room = m.room
+            if not room.is_group and room.member_ids() == {user.id, other.id}:
+                return jsonify(_room_summary(room, user)), 200
+        room = ChatRoom(organization_id=user.organization_id, is_group=False,
+                        created_by=user.id)
+        db.session.add(room)
+        db.session.flush()
+        db.session.add_all([ChatMember(room_id=room.id, user_id=user.id),
+                            ChatMember(room_id=room.id, user_id=other.id)])
+        member_ids = [user.id, other.id]
+    else:  # ---- group
+        name = (body.get("name") or "").strip()
+        if not name:
+            raise APIException("name (group) or user_id (DM) is required",
+                               status_code=400)
+        ids = {int(i) for i in (body.get("member_ids") or [])}
+        members = User.query.filter(
+            User.id.in_(ids or {0}),
+            User.organization_id == user.organization_id).all()
+        room = ChatRoom(organization_id=user.organization_id, is_group=True,
+                        name=name, created_by=user.id)
+        db.session.add(room)
+        db.session.flush()
+        db.session.add(ChatMember(room_id=room.id, user_id=user.id))
+        for m in members:
+            if m.id != user.id:
+                db.session.add(ChatMember(room_id=room.id, user_id=m.id))
+        member_ids = [user.id] + [m.id for m in members if m.id != user.id]
+
+    db.session.commit()
+    db.session.refresh(room)
+    # Tell every member's live socket so they can subscribe + refresh lists.
+    for uid in member_ids:
+        sio.emit("chat:room-created", {"room_id": room.id}, to=f"user:{uid}")
+    return jsonify(_room_summary(room, user)), 201
+
+
+@api.route("/chat/rooms/<int:rid>/members", methods=["POST"])
+@permission_required("workspace.view")
+def add_chat_member(user, rid):
+    from api.sockets import socketio as sio
+    member = _get_membership(user, rid)
+    room = member.room
+    if not room.is_group:
+        raise APIException("Direct messages cannot gain members", status_code=400)
+    body = request.get_json(silent=True) or {}
+    new_user = User.query.get(int(body.get("user_id") or 0))
+    if new_user is None or new_user.organization_id != user.organization_id:
+        raise APIException("User not found", status_code=404)
+    if new_user.id not in room.member_ids():
+        db.session.add(ChatMember(room_id=rid, user_id=new_user.id))
+        db.session.add(ChatMessage(
+            room_id=rid, sender_id=None, kind="SYSTEM",
+            body=f"{user.full_name or user.email} added "
+                 f"{new_user.full_name or new_user.email}"))
+        db.session.commit()
+        sio.emit("chat:room-created", {"room_id": rid}, to=f"user:{new_user.id}")
+    return jsonify(_room_summary(room, user)), 200
+
+
+@api.route("/chat/rooms/<int:rid>/messages", methods=["GET"])
+@permission_required("workspace.view")
+def list_chat_messages(user, rid):
+    _get_membership(user, rid)
+    q = ChatMessage.query.filter_by(room_id=rid)
+    before_id = request.args.get("before_id", type=int)
+    if before_id:
+        q = q.filter(ChatMessage.id < before_id)
+    limit = min(request.args.get("limit", 50, type=int), 200)
+    msgs = q.order_by(ChatMessage.id.desc()).limit(limit).all()
+    return jsonify([m.serialize() for m in reversed(msgs)]), 200
+
+
+@api.route("/chat/rooms/<int:rid>/messages", methods=["POST"])
+@permission_required("workspace.view")
+def post_chat_message(user, rid):
+    """REST send — same result as the socket event (and broadcast to it)."""
+    from api.sockets import socketio as sio
+    from api.models import CHAT_MESSAGE_KINDS
+    _get_membership(user, rid)
+    body = request.get_json(silent=True) or {}
+    kind = body.get("kind") if body.get("kind") in CHAT_MESSAGE_KINDS else "TEXT"
+    text = (body.get("body") or "").strip() or None
+    if not text and not body.get("media_url"):
+        raise APIException("body or media_url is required", status_code=400)
+    msg = ChatMessage(room_id=rid, sender_id=user.id, kind=kind, body=text,
+                      media_url=body.get("media_url"),
+                      media_type=body.get("media_type"),
+                      meta=body.get("meta") or {})
+    db.session.add(msg)
+    db.session.commit()
+    sio.emit("chat:message", msg.serialize(), to=f"chatroom:{rid}")
+    return jsonify(msg.serialize()), 201
+
+
+@api.route("/chat/rooms/<int:rid>/read", methods=["POST"])
+@permission_required("workspace.view")
+def mark_chat_read(user, rid):
+    member = _get_membership(user, rid)
+    member.last_read_at = utcnow()
+    db.session.commit()
+    return jsonify({"ok": True}), 200
+
+
+@api.route("/chat/upload", methods=["POST"])
+@permission_required("workspace.view")
+def chat_upload(user):
+    """Multipart upload for voice notes / video / images / files."""
+    from api.integrations import media
+    f = request.files.get("file")
+    if f is None:
+        raise APIException("file is required", status_code=400)
+    stored = media.store(f)
+    return jsonify(stored), 201
 
 
 # ---------------------------------------------------------------------------

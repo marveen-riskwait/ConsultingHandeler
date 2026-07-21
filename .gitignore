@@ -80,3 +80,6 @@ database.database
 database.db
 diagram.png
 __pycache__/
+
+# Chat media stored locally (Cloudinary not configured)
+uploads/

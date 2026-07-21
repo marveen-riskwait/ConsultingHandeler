@@ -1,0 +1,529 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import useGlobalReducer from "../hooks/useGlobalReducer";
+import { api } from "../services/api";
+import { getSocket } from "../services/socket";
+
+const BASE = (import.meta.env.VITE_BACKEND_URL || "").replace(/\/$/, "");
+const mediaSrc = (url) => (url && url.startsWith("/") ? `${BASE}${url}` : url);
+const ICE = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+
+const fmtTime = (iso) =>
+  new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+
+// ------------------------------------------------------------ message bubble
+const Bubble = ({ m, mine }) => {
+  if (m.kind === "SYSTEM" || m.kind === "CALL") {
+    return <div className="ch-system">{m.body}</div>;
+  }
+  return (
+    <div className={`ch-msg ${mine ? "mine" : ""}`}>
+      <div className="ch-bubble">
+        {!mine && <div className="ch-sender">{m.sender_name}</div>}
+        {m.kind === "TEXT" && <span>{m.body}</span>}
+        {m.kind === "AUDIO" && (
+          <audio controls src={mediaSrc(m.media_url)} className="ch-audio" />
+        )}
+        {m.kind === "VIDEO" && (
+          <video controls src={mediaSrc(m.media_url)} className="ch-video" />
+        )}
+        {m.kind === "IMAGE" && (
+          <a href={mediaSrc(m.media_url)} target="_blank" rel="noreferrer">
+            <img src={mediaSrc(m.media_url)} alt="" className="ch-image" />
+          </a>
+        )}
+        {m.kind === "FILE" && (
+          <a href={mediaSrc(m.media_url)} target="_blank" rel="noreferrer"
+            className="ch-file">
+            <i className="fa-solid fa-paperclip" /> {m.body || "Attachment"}
+          </a>
+        )}
+        {m.body && m.kind !== "TEXT" && m.kind !== "FILE" && (
+          <div style={{ marginTop: ".25rem" }}>{m.body}</div>
+        )}
+        <span className="ch-time">{fmtTime(m.created_at)}</span>
+      </div>
+    </div>
+  );
+};
+
+// ------------------------------------------------------------------ the page
+export const Chat = () => {
+  const { store } = useGlobalReducer();
+  const myId = store.user?.id;
+
+  const [rooms, setRooms] = useState([]);
+  const [colleagues, setColleagues] = useState([]);
+  const [activeId, setActiveId] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [draft, setDraft] = useState("");
+  const [typing, setTyping] = useState(null);
+  const [showNew, setShowNew] = useState(false);
+  const [groupForm, setGroupForm] = useState({ name: "", ids: [] });
+  const [recording, setRecording] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Call state. peersRef: user_id -> RTCPeerConnection.
+  const [call, setCall] = useState(null);          // {roomId, media, joined}
+  const [incoming, setIncoming] = useState(null);  // {room_id, from_name, media}
+  const [remoteStreams, setRemoteStreams] = useState({}); // uid -> MediaStream
+  const localStreamRef = useRef(null);
+  const localVideoRef = useRef(null);
+  const peersRef = useRef({});
+  const recorderRef = useRef(null);
+  const scrollRef = useRef(null);
+  const activeIdRef = useRef(null);
+  activeIdRef.current = activeId;
+  const callRef = useRef(null);
+  callRef.current = call;
+
+  const loadRooms = useCallback(() =>
+    api.chatRooms().then(setRooms).catch((e) => setError(e.message)), []);
+
+  const openRoom = useCallback((id) => {
+    setActiveId(id);
+    api.chatMessages(id).then(setMessages).catch((e) => setError(e.message));
+    api.markChatRead(id).then(loadRooms).catch(() => {});
+  }, [loadRooms]);
+
+  // ------------------------------------------------------------- WebRTC mesh
+  const signal = (roomId, to, data) =>
+    getSocket()?.emit("webrtc:signal", { room_id: roomId, to, data });
+
+  const makePeer = useCallback((uid, roomId, initiator) => {
+    if (peersRef.current[uid]) return peersRef.current[uid];
+    const pc = new RTCPeerConnection(ICE);
+    peersRef.current[uid] = pc;
+    (localStreamRef.current?.getTracks() || []).forEach((t) =>
+      pc.addTrack(t, localStreamRef.current));
+    pc.onicecandidate = (e) => {
+      if (e.candidate) signal(roomId, uid, { candidate: e.candidate });
+    };
+    pc.ontrack = (e) => {
+      setRemoteStreams((s) => ({ ...s, [uid]: e.streams[0] }));
+    };
+    if (initiator) {
+      (async () => {
+        const offer = await pc.createOffer({ offerToReceiveAudio: true,
+                                             offerToReceiveVideo: true });
+        await pc.setLocalDescription(offer);
+        signal(roomId, uid, { sdp: pc.localDescription });
+      })();
+    }
+    return pc;
+  }, []);
+
+  const grabMedia = async (media) => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true, video: media === "video" });
+      localStreamRef.current = stream;
+      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+      return stream;
+    } catch (e) {
+      setError("No camera/microphone available — joining as viewer.");
+      return null;
+    }
+  };
+
+  const startCall = async (media) => {
+    if (!activeId) return;
+    await grabMedia(media);
+    setCall({ roomId: activeId, media, joined: true });
+    getSocket()?.emit("call:start", { room_id: activeId, media });
+  };
+
+  const acceptCall = async () => {
+    const { room_id, media } = incoming;
+    setIncoming(null);
+    if (activeIdRef.current !== room_id) openRoom(room_id);
+    await grabMedia(media);
+    setCall({ roomId: room_id, media, joined: true });
+    getSocket()?.emit("call:join", { room_id, media });
+  };
+
+  const hangup = useCallback((notify = true) => {
+    const c = callRef.current;
+    if (notify && c) getSocket()?.emit("call:leave", { room_id: c.roomId });
+    Object.values(peersRef.current).forEach((pc) => pc.close());
+    peersRef.current = {};
+    (localStreamRef.current?.getTracks() || []).forEach((t) => t.stop());
+    localStreamRef.current = null;
+    setRemoteStreams({});
+    setCall(null);
+  }, []);
+
+  const toggleTrack = (kind) => {
+    (localStreamRef.current?.getTracks() || [])
+      .filter((t) => t.kind === kind)
+      .forEach((t) => { t.enabled = !t.enabled; });
+  };
+
+  // -------------------------------------------------------- socket lifecycle
+  useEffect(() => {
+    const s = getSocket();
+    if (!s) return undefined;
+
+    const onMessage = (m) => {
+      if (m.room_id === activeIdRef.current) {
+        setMessages((ms) => [...ms, m]);
+        api.markChatRead(m.room_id).catch(() => {});
+      }
+      loadRooms();
+    };
+    const onRoomCreated = ({ room_id }) => {
+      s.emit("chat:join-room", { room_id });
+      loadRooms();
+    };
+    const onTyping = ({ room_id, name }) => {
+      if (room_id === activeIdRef.current) {
+        setTyping(name);
+        setTimeout(() => setTyping(null), 2500);
+      }
+    };
+    const onRinging = (data) => {
+      if (callRef.current) return; // already on a call
+      setIncoming(data);
+    };
+    const onParticipants = ({ room_id, participants }) => {
+      // I just joined: offer to every existing peer.
+      participants.forEach((p) => {
+        if (p.user_id !== myId) makePeer(p.user_id, room_id, true);
+      });
+    };
+    const onPeerLeft = ({ user_id }) => {
+      peersRef.current[user_id]?.close();
+      delete peersRef.current[user_id];
+      setRemoteStreams((str) => {
+        const next = { ...str };
+        delete next[user_id];
+        return next;
+      });
+    };
+    const onEnded = ({ room_id }) => {
+      if (callRef.current?.roomId === room_id) hangup(false);
+      setIncoming((inc) => (inc?.room_id === room_id ? null : inc));
+    };
+    const onSignal = async ({ room_id, from, data }) => {
+      if (!callRef.current || callRef.current.roomId !== room_id) return;
+      const pc = makePeer(from, room_id, false);
+      if (data?.sdp) {
+        await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+        if (data.sdp.type === "offer") {
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          signal(room_id, from, { sdp: pc.localDescription });
+        }
+      } else if (data?.candidate) {
+        try { await pc.addIceCandidate(new RTCIceCandidate(data.candidate)); }
+        catch (e) { /* ignore late candidates */ }
+      }
+    };
+
+    s.on("chat:message", onMessage);
+    s.on("chat:room-created", onRoomCreated);
+    s.on("chat:typing", onTyping);
+    s.on("call:ringing", onRinging);
+    s.on("call:participants", onParticipants);
+    s.on("call:peer-left", onPeerLeft);
+    s.on("call:ended", onEnded);
+    s.on("webrtc:signal", onSignal);
+    return () => {
+      s.off("chat:message", onMessage);
+      s.off("chat:room-created", onRoomCreated);
+      s.off("chat:typing", onTyping);
+      s.off("call:ringing", onRinging);
+      s.off("call:participants", onParticipants);
+      s.off("call:peer-left", onPeerLeft);
+      s.off("call:ended", onEnded);
+      s.off("webrtc:signal", onSignal);
+    };
+  }, [loadRooms, makePeer, myId, hangup, openRoom]);
+
+  useEffect(() => {
+    loadRooms();
+    api.chatUsers().then(setColleagues).catch(() => {});
+  }, [loadRooms]);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages]);
+
+  useEffect(() => () => hangup(), [hangup]); // leave call on unmount
+
+  // ------------------------------------------------------------------ actions
+  const send = () => {
+    const body = draft.trim();
+    if (!body || !activeId) return;
+    getSocket()?.emit("chat:send", { room_id: activeId, body });
+    setDraft("");
+  };
+
+  const attach = async (file) => {
+    if (!file || !activeId) return;
+    setError(null);
+    try {
+      const stored = await api.uploadChatMedia(file);
+      getSocket()?.emit("chat:send", {
+        room_id: activeId, kind: stored.kind, media_url: stored.url,
+        media_type: stored.media_type,
+        body: stored.kind === "FILE" ? file.name : null,
+      });
+    } catch (e) { setError(e.message); }
+  };
+
+  const toggleVoiceNote = async () => {
+    if (recording) {
+      recorderRef.current?.stop();
+      setRecording(false);
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const rec = new MediaRecorder(stream);
+      const chunks = [];
+      rec.ondataavailable = (e) => chunks.push(e.data);
+      rec.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
+        await attach(new File([blob], "voice-note.webm", { type: blob.type }));
+      };
+      rec.start();
+      recorderRef.current = rec;
+      setRecording(true);
+    } catch (e) {
+      setError("Microphone unavailable.");
+    }
+  };
+
+  const startDm = async (userId) => {
+    try {
+      const room = await api.createChatRoom({ user_id: userId });
+      setShowNew(false);
+      await loadRooms();
+      getSocket()?.emit("chat:join-room", { room_id: room.id });
+      openRoom(room.id);
+    } catch (e) { setError(e.message); }
+  };
+
+  const createGroup = async (e) => {
+    e.preventDefault();
+    try {
+      const room = await api.createChatRoom({
+        name: groupForm.name, member_ids: groupForm.ids });
+      setShowNew(false);
+      setGroupForm({ name: "", ids: [] });
+      await loadRooms();
+      getSocket()?.emit("chat:join-room", { room_id: room.id });
+      openRoom(room.id);
+    } catch (e2) { setError(e2.message); }
+  };
+
+  const active = rooms.find((r) => r.id === activeId);
+  const inCallHere = call && call.roomId === activeId;
+
+  return (
+    <>
+      <div className="d-flex justify-content-between align-items-start" style={{ marginBottom: "1rem" }}>
+        <div>
+          <h3 style={{ margin: 0 }}>Team Chat</h3>
+          <p className="muted" style={{ margin: ".15rem 0 0", fontSize: ".85rem" }}>
+            Direct messages, group rooms, voice notes and calls — inside the platform.
+          </p>
+        </div>
+        <button className="btn btn-co btn-sm" onClick={() => setShowNew(!showNew)}>
+          <i className="fa-solid fa-pen-to-square" /> New chat
+        </button>
+      </div>
+
+      {error && <div className="alert alert-danger py-2">{error}</div>}
+
+      {incoming && (
+        <div className="ch-ringing">
+          <i className={`fa-solid ${incoming.media === "video" ? "fa-video" : "fa-phone"} fa-beat`} />
+          <span><b>{incoming.from_name}</b> is calling…</span>
+          <button className="btn btn-sm btn-success" onClick={acceptCall}>Join</button>
+          <button className="btn btn-sm btn-outline-secondary" onClick={() => setIncoming(null)}>Ignore</button>
+        </div>
+      )}
+
+      {showNew && (
+        <div className="co-card" style={{ marginBottom: "1rem" }}>
+          <div className="row g-3">
+            <div className="col-md-5">
+              <div className="section-title">Direct message</div>
+              {colleagues.map((c) => (
+                <div className="work-row" key={c.id} style={{ cursor: "pointer" }}
+                  onClick={() => startDm(c.id)}>
+                  <span className="co-avatar" style={{ width: 26, height: 26, fontSize: ".62rem" }}>
+                    {(c.full_name || c.email)[0].toUpperCase()}
+                  </span>
+                  <div className="grow">
+                    <div className="title">{c.full_name || c.email}</div>
+                    <div className="meta">{c.role.replace(/_/g, " ")}</div>
+                  </div>
+                  <i className="fa-solid fa-comment muted" />
+                </div>
+              ))}
+            </div>
+            <div className="col-md-7">
+              <div className="section-title">New group</div>
+              <form onSubmit={createGroup}>
+                <input className="form-control form-control-sm" placeholder="Group name…"
+                  value={groupForm.name}
+                  onChange={(e) => setGroupForm({ ...groupForm, name: e.target.value })} />
+                <div style={{ display: "flex", flexWrap: "wrap", gap: ".35rem", margin: ".6rem 0" }}>
+                  {colleagues.map((c) => {
+                    const on = groupForm.ids.includes(c.id);
+                    return (
+                      <button type="button" key={c.id}
+                        className={"kf-chip" + (on ? " on" : "")}
+                        onClick={() => setGroupForm({
+                          ...groupForm,
+                          ids: on ? groupForm.ids.filter((i) => i !== c.id)
+                            : [...groupForm.ids, c.id],
+                        })}>
+                        {c.full_name || c.email}
+                      </button>
+                    );
+                  })}
+                </div>
+                <button className="btn btn-co btn-sm" disabled={!groupForm.name.trim()}>
+                  Create group
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="ch-layout">
+        {/* Room list */}
+        <aside className="co-card ch-rooms">
+          {rooms.length === 0 && <div className="empty">No conversations yet.</div>}
+          {rooms.map((r) => (
+            <button key={r.id}
+              className={"ch-room" + (r.id === activeId ? " active" : "")}
+              onClick={() => openRoom(r.id)}>
+              <span className="co-avatar" style={{ width: 34, height: 34, fontSize: ".72rem" }}>
+                {r.is_group ? <i className="fa-solid fa-users" /> : r.display_name[0]?.toUpperCase()}
+              </span>
+              <span className="ch-room-main">
+                <span className="ch-room-name">{r.display_name}</span>
+                <span className="ch-room-last">
+                  {r.last_message
+                    ? (r.last_message.kind === "TEXT" || r.last_message.kind === "SYSTEM"
+                      ? (r.last_message.body || "").slice(0, 34)
+                      : `· ${r.last_message.kind.toLowerCase()}`)
+                    : "No messages yet"}
+                </span>
+              </span>
+              {r.unread > 0 && <span className="ch-unread">{r.unread}</span>}
+            </button>
+          ))}
+        </aside>
+
+        {/* Thread */}
+        <section className="co-card ch-thread">
+          {!active && <div className="empty" style={{ margin: "auto" }}>
+            Pick a conversation or start a new one.</div>}
+
+          {active && (
+            <>
+              <header className="ch-head">
+                <b>{active.display_name}</b>
+                <span className="muted" style={{ fontSize: ".78rem" }}>
+                  {active.is_group
+                    ? `${active.members.length} members`
+                    : "Direct message"}
+                </span>
+                <span style={{ flex: 1 }} />
+                {!call && (
+                  <>
+                    <button className="btn btn-sm btn-outline-secondary" title="Audio call"
+                      onClick={() => startCall("audio")}>
+                      <i className="fa-solid fa-phone" />
+                    </button>
+                    <button className="btn btn-sm btn-co" title="Video call"
+                      onClick={() => startCall("video")}>
+                      <i className="fa-solid fa-video" /> Meet
+                    </button>
+                  </>
+                )}
+              </header>
+
+              {inCallHere && (
+                <div className="ch-call">
+                  <div className="ch-call-grid">
+                    <div className="ch-tile">
+                      <video ref={localVideoRef} autoPlay muted playsInline />
+                      <span className="ch-tile-name">You</span>
+                    </div>
+                    {Object.entries(remoteStreams).map(([uid, stream]) => (
+                      <RemoteTile key={uid} stream={stream}
+                        name={active.members.find((m) => m.user_id === Number(uid))?.full_name || "Peer"} />
+                    ))}
+                  </div>
+                  <div className="ch-call-controls">
+                    <button className="btn btn-sm btn-outline-light" title="Toggle microphone"
+                      onClick={() => toggleTrack("audio")}>
+                      <i className="fa-solid fa-microphone" />
+                    </button>
+                    <button className="btn btn-sm btn-outline-light" title="Toggle camera"
+                      onClick={() => toggleTrack("video")}>
+                      <i className="fa-solid fa-video" />
+                    </button>
+                    <button className="btn btn-sm btn-danger" onClick={() => hangup()}>
+                      <i className="fa-solid fa-phone-slash" /> Leave
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="ch-messages" ref={scrollRef}>
+                {messages.map((m) => (
+                  <Bubble key={m.id} m={m} mine={m.sender_id === myId} />
+                ))}
+                {typing && <div className="ch-typing">{typing} is typing…</div>}
+              </div>
+
+              <div className="ch-composer">
+                <label className="btn btn-sm btn-outline-secondary" title="Attach file">
+                  <i className="fa-solid fa-paperclip" />
+                  <input type="file" hidden
+                    onChange={(e) => { attach(e.target.files[0]); e.target.value = ""; }} />
+                </label>
+                <button className={`btn btn-sm ${recording ? "btn-danger" : "btn-outline-secondary"}`}
+                  title="Voice note" onClick={toggleVoiceNote}>
+                  <i className={`fa-solid ${recording ? "fa-stop" : "fa-microphone"}`} />
+                </button>
+                <input className="form-control" placeholder="Message…"
+                  value={draft}
+                  onChange={(e) => {
+                    setDraft(e.target.value);
+                    getSocket()?.emit("chat:typing", { room_id: activeId });
+                  }}
+                  onKeyDown={(e) => e.key === "Enter" && send()} />
+                <button className="btn btn-co" onClick={send} disabled={!draft.trim()}>
+                  <i className="fa-solid fa-paper-plane" />
+                </button>
+              </div>
+            </>
+          )}
+        </section>
+      </div>
+    </>
+  );
+};
+
+const RemoteTile = ({ stream, name }) => {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (ref.current) ref.current.srcObject = stream;
+  }, [stream]);
+  return (
+    <div className="ch-tile">
+      <video ref={ref} autoPlay playsInline />
+      <span className="ch-tile-name">{name}</span>
+    </div>
+  );
+};

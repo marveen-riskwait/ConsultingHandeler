@@ -21,6 +21,8 @@ sqlalchemy = "*"
 celery = "*"
 redis = "*"
 anthropic = "*"
+flask-socketio = "*"
+simple-websocket = "*"
 
 [dev-packages]
 pytest = "*"

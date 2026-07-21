@@ -17,6 +17,7 @@ import { Regulatory } from "./pages/Regulatory";
 import { Audit } from "./pages/Audit";
 import { Assistant } from "./pages/Assistant";
 import { KycForm } from "./pages/KycForm";
+import { Chat } from "./pages/Chat";
 
 export const router = createBrowserRouter(
   createRoutesFromElements(
@@ -26,6 +27,7 @@ export const router = createBrowserRouter(
           visitors landing on /login are bounced to their workspace. */}
       <Route path="/login" element={<Navigate to="/" replace />} />
       <Route path="/assistant" element={<Assistant />} />
+      <Route path="/chat" element={<Chat />} />
       <Route path="/customers" element={<Customers />} />
       <Route path="/customers/:id" element={<Customer360 />} />
       <Route path="/customers/:id/kyc-form" element={<KycForm />} />

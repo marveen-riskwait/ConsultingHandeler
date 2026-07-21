@@ -124,6 +124,31 @@ export const api = {
   revokeInvitation: (id) => request(`/invitations/${id}/revoke`, { method: "POST" }),
   acceptInvitation: (payload) => request("/auth/accept-invitation", { method: "POST", body: payload }),
 
+  // Team chat
+  chatUsers: () => request("/chat/users"),
+  chatRooms: () => request("/chat/rooms"),
+  createChatRoom: (payload) => request("/chat/rooms", { method: "POST", body: payload }),
+  addChatMember: (roomId, userId) =>
+    request(`/chat/rooms/${roomId}/members`, { method: "POST", body: { user_id: userId } }),
+  chatMessages: (roomId, beforeId) =>
+    request(`/chat/rooms/${roomId}/messages${beforeId ? `?before_id=${beforeId}` : ""}`),
+  sendChatMessage: (roomId, payload) =>
+    request(`/chat/rooms/${roomId}/messages`, { method: "POST", body: payload }),
+  markChatRead: (roomId) => request(`/chat/rooms/${roomId}/read`, { method: "POST" }),
+  uploadChatMedia: async (file) => {
+    const token = localStorage.getItem("token");
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${BASE}/api/chat/upload`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || `Upload failed (${res.status})`);
+    return data;
+  },
+
   // Permission management (clickable matrix + special authorizations)
   toggleRolePermission: (roleId, code, enabled) =>
     request(`/roles/${roleId}/permissions`, { method: "POST", body: { code, enabled } }),

@@ -408,6 +408,34 @@ def _seed_requirement_definitions():
     db.session.commit()
 
 
+def _seed_chat(org):
+    """A team group chat with the demo users + a couple of starter messages."""
+    from api.models import ChatRoom, ChatMember, ChatMessage
+    if ChatRoom.query.filter_by(organization_id=org.id,
+                                name="Compliance Team").first():
+        return
+    users = User.query.filter_by(organization_id=org.id).all()
+    if not users:
+        return
+    room = ChatRoom(organization_id=org.id, is_group=True,
+                    name="Compliance Team", created_by=users[0].id)
+    db.session.add(room)
+    db.session.flush()
+    for u in users:
+        db.session.add(ChatMember(room_id=room.id, user_id=u.id))
+    officer = next((u for u in users if "officer" in u.email), users[0])
+    manager = next((u for u in users if "manager" in u.email), users[-1])
+    db.session.add_all([
+        ChatMessage(room_id=room.id, sender_id=manager.id, kind="TEXT",
+                    body="Welcome to the team channel — cases, reviews and "
+                         "escalations get discussed here."),
+        ChatMessage(room_id=room.id, sender_id=officer.id, kind="TEXT",
+                    body="The Sberbank sanctions cases are assigned; call me "
+                         "here if you need a second pair of eyes."),
+    ])
+    db.session.commit()
+
+
 def _seed_providers(org):
     """A working mock provider + prepared (disabled) real stubs."""
     specs = [
@@ -596,6 +624,8 @@ def setup_commands(app):
         _seed_providers(org)
         click.echo("Providers seeded: Mock Identity (KYC, webhook secret 'demo-secret'), "
                    "Sumsub + ComplyAdvantage stubs (disabled, need credentials).")
+        _seed_chat(org)
+        click.echo("Team chat seeded: 'Compliance Team' group with the demo users.")
         click.echo("Done. Log in and run screening on 'John Smith' or "
                    "'Sergei Ivanov' to see the full chain fire.")
 

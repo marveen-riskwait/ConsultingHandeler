@@ -6,6 +6,7 @@ import { Login } from "./Login";
 import { Landing } from "./Landing";
 import useGlobalReducer from "../hooks/useGlobalReducer";
 import { api } from "../services/api";
+import { resetSocket } from "../services/socket";
 
 // The whole app is gated: logged-out visitors get the public landing page at
 // the root (any other path shows the Login screen — e.g. /login, invite links).
@@ -47,7 +48,7 @@ export const Layout = () => {
     return location.pathname === "/" && !isInvite ? <Landing /> : <Login />;
   }
 
-  const logout = () => { dispatch({ type: "logout" }); navigate("/"); };
+  const logout = () => { resetSocket(); dispatch({ type: "logout" }); navigate("/"); };
   const initials = (store.user?.full_name || store.user?.email || "?")
     .split(" ").map((s) => s[0]).join("").slice(0, 2).toUpperCase();
 

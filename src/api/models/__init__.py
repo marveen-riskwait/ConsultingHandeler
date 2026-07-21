@@ -70,6 +70,7 @@ from api.models.assistant import Conversation, Message, MESSAGE_ROLES
 from api.models.sanctions import (
     SanctionedEntity, WatchlistImport, SANCTION_SOURCES, SANCTION_ENTITY_TYPES,
 )
+from api.models.chat import ChatRoom, ChatMember, ChatMessage, CHAT_MESSAGE_KINDS
 
 __all__ = [
     "db", "utcnow",
@@ -106,4 +107,5 @@ __all__ = [
     "Conversation", "Message", "MESSAGE_ROLES",
     "SanctionedEntity", "WatchlistImport",
     "SANCTION_SOURCES", "SANCTION_ENTITY_TYPES",
+    "ChatRoom", "ChatMember", "ChatMessage", "CHAT_MESSAGE_KINDS",
 ]

@@ -82,9 +82,11 @@ export const Assistant = () => {
           <h3 style={{ margin: 0 }}>Compliance Copilot</h3>
           <p className="muted" style={{ margin: ".15rem 0 0" }}>
             AI assistance for drafting, explaining and summarising —{" "}
-            {meta ? (meta.provider === "claude"
-              ? <span className="cop-live">Claude connected</span>
-              : <span className="cop-demo">Demo mode</span>) : "…"}
+            {meta ? (meta.provider === "mock"
+              ? <span className="cop-demo">Demo mode</span>
+              : <span className="cop-live">
+                  {meta.provider.charAt(0).toUpperCase() + meta.provider.slice(1)} connected
+                </span>) : "…"}
           </p>
         </div>
         <button className="btn btn-co btn-sm" onClick={() => startConversation()}>

@@ -11,6 +11,36 @@ def _cid(client, token, name):
     return next(c["id"] for c in r.get_json() if c["name"] == name)
 
 
+def test_provider_resolution_from_env(monkeypatch):
+    """AI_PROVIDER wins; otherwise whichever key is present; else mock."""
+    from api.integrations import ai
+    try:
+        for var in ("AI_PROVIDER", "ANTHROPIC_API_KEY", "GEMINI_API_KEY",
+                    "OPENAI_API_KEY"):
+            monkeypatch.delenv(var, raising=False)
+
+        ai.reset_llm()
+        assert ai.get_llm().name == "mock"
+
+        monkeypatch.setenv("GEMINI_API_KEY", "dummy")
+        ai.reset_llm()
+        assert ai.get_llm().name == "gemini"
+
+        monkeypatch.setenv("OPENAI_API_KEY", "dummy")  # gemini still wins
+        ai.reset_llm()
+        assert ai.get_llm().name == "gemini"
+
+        monkeypatch.setenv("AI_PROVIDER", "openai")    # explicit choice wins
+        ai.reset_llm()
+        assert ai.get_llm().name == "openai"
+
+        monkeypatch.setenv("AI_PROVIDER", "mock")
+        ai.reset_llm()
+        assert ai.get_llm().name == "mock"
+    finally:
+        ai.reset_llm()  # leave the cached provider clean for other tests
+
+
 def test_meta_reports_mock_provider_and_prompts(client, tokens):
     t = tokens["analyst@test.io"]
     r = client.get("/api/assistant/meta", headers=auth(t))

@@ -2003,7 +2003,13 @@ def send_assistant_message(user, conversation_id):
     text = (body.get("content") or "").strip()
     if not text:
         raise APIException("content is required", status_code=400)
-    reply = assistant_service.ask(conv, user, text)
+    try:
+        reply = assistant_service.ask(conv, user, text)
+    except Exception as exc:
+        # Wrong/expired API key, quota, network… — surface it readably instead
+        # of a blank 500, and leave the conversation intact.
+        db.session.rollback()
+        raise APIException(f"AI provider error: {exc}", status_code=502)
     return jsonify({"conversation": conv.serialize(),
                     "reply": reply.serialize()}), 201
 

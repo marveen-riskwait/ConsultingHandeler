@@ -169,6 +169,11 @@ export const api = {
     request("/watchlists/ingest", { method: "POST", body: { source: source || "ALL" } }),
   kybLookup: (id) => request(`/customers/${id}/kyb-lookup`, { method: "POST" }),
   enrich: (id) => request(`/customers/${id}/enrich`, { method: "POST" }),
+  deletionCheck: (id) => request(`/customers/${id}/deletion-check`),
+  deleteCustomer: (id, payload) =>
+    request(`/customers/${id}`, { method: "DELETE", body: payload }),
+  archiveCustomer: (id, reason) =>
+    request(`/customers/${id}/archive`, { method: "POST", body: { reason } }),
 
   // Compliance Copilot (AI assistant)
   assistantMeta: () => request("/assistant/meta"),

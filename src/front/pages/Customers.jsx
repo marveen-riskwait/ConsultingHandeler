@@ -3,10 +3,13 @@ import { Link } from "react-router-dom";
 import { api } from "../services/api";
 import useGlobalReducer from "../hooks/useGlobalReducer";
 import { can } from "../permissions/can";
+import { DeleteCustomerModal } from "../components/DeleteCustomerModal";
 
 export const Customers = () => {
   const { store } = useGlobalReducer();
   const canCreate = can(store.user, "customer.create");
+  const canDelete = can(store.user, "customer.delete");
+  const [deleting, setDeleting] = useState(null);
   const [customers, setCustomers] = useState([]);
   const [error, setError] = useState(null);
   const [showForm, setShowForm] = useState(false);
@@ -92,9 +95,25 @@ export const Customers = () => {
             </div>
             <span className={`chip ${cu.risk_level}`}>{cu.risk_level} · {cu.risk_score}</span>
             <Link to={`/customers/${cu.id}`} className="btn btn-sm btn-outline-secondary">Open</Link>
+            {canDelete && (
+              <button className="btn btn-sm btn-outline-danger" title="Delete customer"
+                onClick={() => setDeleting(cu)}>
+                <i className="fa-solid fa-trash" />
+              </button>
+            )}
           </div>
         ))}
       </div>
+
+      {deleting && (
+        <DeleteCustomerModal
+          customer={deleting}
+          canOverride={can(store.user, "organization.update")}
+          onClose={() => setDeleting(null)}
+          onDeleted={() => { setDeleting(null); load(); }}
+          onArchived={() => { setDeleting(null); load(); }}
+        />
+      )}
     </>
   );
 };

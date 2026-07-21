@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../services/api";
 import useGlobalReducer from "../hooks/useGlobalReducer";
 import { can } from "../permissions/can";
 import { AlertDetails } from "../components/AlertDetails";
+import { DeleteCustomerModal } from "../components/DeleteCustomerModal";
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : "—");
 
@@ -56,6 +57,8 @@ export const Customer360 = () => {
   const [openAlert, setOpenAlert] = useState(null);
   const [enriching, setEnriching] = useState(false);
   const [enrichNote, setEnrichNote] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const navigate = useNavigate();
 
   const runEnrichment = async () => {
     setEnriching(true); setError(null); setEnrichNote(null);
@@ -186,8 +189,24 @@ export const Customer360 = () => {
           <button className="btn btn-co" onClick={runScreening} disabled={screening}>
             <i className="fa-solid fa-magnifying-glass" /> {screening ? "Screening…" : "Run screening"}
           </button>
+          {can(store.user, "customer.delete") && (
+            <button className="btn btn-outline-danger" title="Delete this customer record"
+              onClick={() => setConfirmDelete(true)}>
+              <i className="fa-solid fa-trash" />
+            </button>
+          )}
         </div>
       </div>
+
+      {confirmDelete && (
+        <DeleteCustomerModal
+          customer={customer}
+          canOverride={can(store.user, "organization.update")}
+          onClose={() => setConfirmDelete(false)}
+          onDeleted={() => navigate("/customers")}
+          onArchived={() => { setConfirmDelete(false); load(); }}
+        />
+      )}
 
       {enrichNote && (
         <div className="alert alert-success py-2">

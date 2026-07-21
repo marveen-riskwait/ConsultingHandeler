@@ -315,6 +315,21 @@ h1, h2, h3, h4, .co-serif {
   background: #1c2740; }
 .ch-call-controls { display: flex; gap: .5rem; justify-content: center; margin-top: .7rem; }
 
+/* ---- Destructive-action modal (delete customer) ---- */
+.cd-backdrop {
+  position: fixed; inset: 0; background: rgba(16, 24, 40, .55);
+  display: flex; align-items: center; justify-content: center; z-index: 60;
+  padding: 1rem;
+}
+.cd-modal { width: 100%; max-width: 520px; max-height: 88vh; overflow-y: auto; }
+.cd-counts { display: flex; flex-wrap: wrap; gap: .35rem; }
+.cd-label { display: block; font-size: .78rem; font-weight: 600;
+  margin: .7rem 0 .2rem; }
+.cd-force { display: block; font-size: .78rem; color: var(--sev-critical);
+  margin-top: .7rem; }
+.cd-actions { display: flex; gap: .5rem; justify-content: flex-end;
+  margin-top: 1rem; flex-wrap: wrap; }
+
 /* ---- Alert evidence panel ---- */
 .alert-details {
   background: #f7f8fb; border: 1px solid var(--co-border); border-radius: 10px;

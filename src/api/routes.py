@@ -1930,6 +1930,64 @@ def watchlist_ingest(user):
     return jsonify([i.serialize() for i in imports]), 200
 
 
+@api.route("/customers/<int:cid>/deletion-check", methods=["GET"])
+@permission_required("customer.delete")
+def customer_deletion_check(user, cid):
+    """What would happen if this customer were deleted (shown in the modal)."""
+    from api.engine import customer_deletion
+    customer = _get_customer_for(user, cid)
+    return jsonify({
+        "customer": customer.serialize(),
+        "blockers": customer_deletion.blockers(customer),
+        "counts": {
+            "cases": Case.query.filter_by(customer_id=cid).count(),
+            "tasks": Task.query.filter_by(customer_id=cid).count(),
+            "documents": Document.query.filter_by(customer_id=cid).count(),
+            "screening_matches": ScreeningMatch.query.filter_by(customer_id=cid).count(),
+            "events": ComplianceEvent.query.filter_by(customer_id=cid).count(),
+            "alerts": ComplianceAlert.query.filter_by(customer_id=cid).count(),
+        },
+    }), 200
+
+
+@api.route("/customers/<int:cid>", methods=["DELETE"])
+@permission_required("customer.delete")
+def delete_customer_route(user, cid):
+    """Delete an erroneous customer record. Requires a typed confirmation of
+    the customer name + a reason; refuses when retention rules apply."""
+    from api.engine import customer_deletion
+    customer = _get_customer_for(user, cid)
+    body = request.get_json(silent=True) or {}
+    reason = (body.get("reason") or "").strip()
+    confirm = (body.get("confirm_name") or "").strip()
+    if len(reason) < 5:
+        raise APIException("A reason (min 5 chars) is required — it is audited.",
+                           status_code=400)
+    if confirm.lower() != (customer.name or "").strip().lower():
+        raise APIException("Confirmation failed: type the exact customer name.",
+                           status_code=400)
+
+    # Only an administrator may override the retention guard.
+    force = bool(body.get("force")) and has_permission(user, "organization.update")
+    try:
+        out = customer_deletion.delete_customer(customer, user, reason, force=force)
+    except ValueError as exc:
+        raise APIException(str(exc), status_code=409)
+    return jsonify(out), 200
+
+
+@api.route("/customers/<int:cid>/archive", methods=["POST"])
+@permission_required("customer.update")
+def archive_customer_route(user, cid):
+    """Safe alternative to deletion: keep the file, leave the active book."""
+    from api.engine import customer_deletion
+    customer = _get_customer_for(user, cid)
+    body = request.get_json(silent=True) or {}
+    reason = (body.get("reason") or "Archived by user").strip()
+    customer_deletion.archive_customer(customer, user, reason)
+    return jsonify(customer.serialize()), 200
+
+
 @api.route("/customers/<int:cid>/enrich", methods=["POST"])
 @permission_required("kyc.edit")
 def enrich_customer(user, cid):

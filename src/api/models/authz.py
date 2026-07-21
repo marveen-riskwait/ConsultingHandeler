@@ -39,6 +39,7 @@ PERMISSION_CATALOG = [
     ("customer.view", "View customers"),
     ("customer.create", "Create customers"),
     ("customer.update", "Update customers"),
+    ("customer.delete", "Delete customers (erroneous records only)"),
 
     ("kyc.view", "View KYC"),
     ("kyc.edit", "Edit KYC"),
@@ -163,7 +164,7 @@ DEFAULT_ROLE_PERMISSIONS = {
         "screening.confirm_match", "kyc.approve", "kyb.edit", "kyb.review",
         "risk.override", "risk.approve",
         "case.assign", "case.escalate", "case.close", "case.approve",
-        "document.verify", "audit.view",
+        "document.verify", "audit.view", "customer.delete",
     ]),
 
     "COMPLIANCE_MANAGER": _codes(_ANALYST_BASE, _MANAGER_EXTRA),
@@ -172,7 +173,7 @@ DEFAULT_ROLE_PERMISSIONS = {
     "MLRO": _codes(_ANALYST_BASE, [
         "screening.confirm_match", "risk.override", "risk.approve",
         "case.escalate", "case.close", "case.approve",
-        "audit.view", "regulatory.view",
+        "audit.view", "regulatory.view", "customer.delete",
     ]),
 
     "AUDITOR": [

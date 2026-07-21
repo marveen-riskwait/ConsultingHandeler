@@ -106,8 +106,14 @@ def auto_assign(case, *, strategy=None, actor=None):
         return None
 
     case.assigned_to = assignee.id
+    if rule is not None and rule.team_id:
+        case.team_id = rule.team_id
     audit.record("CASE_ASSIGNED", "case", case.id, actor=actor,
                  new_value=assignee.email,
                  reason=f"{chosen_strategy}" + (f" (rule: {rule.name})" if rule else ""))
+    # The customer conversation is addressed to whoever handles the file, so
+    # assigning a case is what opens it to the right people.
+    from api.engine import customer_chat
+    customer_chat.sync_for_case(case)
     db.session.commit()
     return assignee

@@ -25,6 +25,10 @@ class ChatRoom(db.Model):
         ForeignKey("organization.id"), nullable=False)
     is_group: Mapped[bool] = mapped_column(Boolean, default=False)
     name: Mapped[str] = mapped_column(String(120), nullable=True)  # groups only
+    # A customer room belongs to the file, not to a person: the organization
+    # talks to the client, and membership follows the team on the case.
+    customer_id: Mapped[int] = mapped_column(
+        ForeignKey("customer.id"), nullable=True, index=True)
     created_by: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
@@ -40,13 +44,17 @@ class ChatRoom(db.Model):
         data = {
             "id": self.id,
             "is_group": self.is_group,
+            "is_customer_room": self.customer_id is not None,
+            "customer_id": self.customer_id,
             "name": self.name,
             "created_by": self.created_by,
             "members": [m.serialize() for m in self.members],
             "unread": unread,
             "last_message": last_message.serialize() if last_message else None,
         }
-        if not self.is_group and for_user_id is not None:
+        if self.customer_id is not None:
+            data["display_name"] = self.name or "Customer"
+        elif not self.is_group and for_user_id is not None:
             other = next((m for m in self.members if m.user_id != for_user_id), None)
             data["display_name"] = (other.user.full_name or other.user.email) if other else "Me"
         else:
@@ -96,12 +104,20 @@ class ChatMessage(db.Model):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     def serialize(self):
+        # Both labels travel with the message because one payload is broadcast
+        # to everyone in the room: staff need to know which colleague wrote it
+        # (accountability, audit), while the client is answered by the
+        # organization, not by a named individual. The client picks the label.
+        staff_author = bool(self.sender and not self.sender.is_portal_user())
+        org = self.sender.organization if self.sender else None
         return {
             "id": self.id,
             "room_id": self.room_id,
             "sender_id": self.sender_id,
             "sender_name": (self.sender.full_name or self.sender.email)
                            if self.sender else "System",
+            "from_staff": staff_author,
+            "organization_name": org.name if org is not None else None,
             "kind": self.kind,
             "body": self.body,
             "media_url": self.media_url,

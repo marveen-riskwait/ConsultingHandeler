@@ -3,35 +3,17 @@
 The chat is used by BOTH sides of the relationship, so the directory is
 asymmetric:
 
-- Staff see their colleagues AND the customer portal users, so a compliance
-  officer can message a client directly.
-- A portal user (a customer) sees ONLY their reference contacts — the
-  customer's relationship manager, plus whoever is actually assigned to their
-  open cases/tasks. Never the whole team, never other customers.
+- Staff see their colleagues. Person-to-person.
+- A portal user sees NOBODY here. A client does not write to an individual:
+  they write to the organization, in the conversation attached to their file,
+  which the assigned team reads (see engine/customer_chat.py). That is the
+  whole point — no "their" officer to lose when someone leaves or is away.
 
-Every room creation and every message goes through `can_message()`, so the
-boundary is enforced server-side, not merely hidden in the UI.
+So direct messages are strictly staff-to-staff. Every room creation and every
+message goes through `can_message()`, so the boundary is enforced server-side,
+not merely hidden in the UI.
 """
-from api.models import User, Customer, Case, Task
-
-
-def _reference_ids(user):
-    """Staff a portal user is allowed to reach, for their own customer file."""
-    if not user.customer_id:
-        return set()
-    ids = set()
-    customer = Customer.query.get(user.customer_id)
-    if customer is not None and customer.relationship_manager_id:
-        ids.add(customer.relationship_manager_id)
-    # Fallback/extra: people actually working the file right now.
-    for case in Case.query.filter_by(customer_id=user.customer_id).all():
-        if case.assigned_to:
-            ids.add(case.assigned_to)
-    for task in Task.query.filter_by(customer_id=user.customer_id).all():
-        if task.assigned_to:
-            ids.add(task.assigned_to)
-    ids.discard(user.id)
-    return ids
+from api.models import User, Customer
 
 
 def directory(user, query=None):
@@ -40,12 +22,10 @@ def directory(user, query=None):
                                 is_active=True).filter(User.id != user.id)
 
     if user.is_portal_user():
-        allowed = _reference_ids(user)
-        if not allowed:
-            return []
-        candidates = base.filter(User.id.in_(allowed)).all()
-    else:
-        candidates = base.all()
+        # Nothing to pick from: their conversation is the one on their file.
+        return []
+    # Colleagues only — a client is reached through the customer room.
+    candidates = [u for u in base.all() if not u.is_portal_user()]
 
     if query:
         q = query.strip().lower()
@@ -73,11 +53,10 @@ def can_message(user, other):
         return False
     if user.id == other.id:
         return False
-    if user.is_portal_user():
-        return other.id in _reference_ids(user)
-    if other.is_portal_user():
-        # Staff may message a customer — any staff member of the org can.
-        return True
+    # Either side being a client means this belongs in the customer room, where
+    # the team can see it and the history survives a change of handler.
+    if user.is_portal_user() or other.is_portal_user():
+        return False
     return True
 
 

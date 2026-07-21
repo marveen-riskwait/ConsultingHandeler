@@ -1264,9 +1264,15 @@ def assign_case(user, case_id):
             raise APIException("Assignee not found in organization", status_code=404)
         old = case.assigned_to
         case.assigned_to = target.id
+        if body.get("team_id"):
+            case.team_id = int(body["team_id"])
         audit.record("CASE_REASSIGNED" if old else "CASE_ASSIGNED", "case",
                      case.id, actor=user, old_value=str(old),
                      new_value=target.email, reason="manual", commit=True)
+        # Handing the file over hands over the conversation with it.
+        from api.engine import customer_chat
+        customer_chat.sync_for_case(case)
+        db.session.commit()
         return jsonify(case.serialize()), 200
     # No user_id -> automatic assignment by strategy/rules.
     assignee = assignment.auto_assign(
@@ -1715,6 +1721,15 @@ def chat_users(user):
 @api.route("/chat/rooms", methods=["GET"])
 @permission_required("workspace.view")
 def list_chat_rooms(user):
+    from api.engine import customer_chat
+    if user.is_portal_user() and user.customer_id:
+        # A client always has exactly one conversation, and it exists from the
+        # moment they log in — they should never have to create anything.
+        customer = Customer.query.get(user.customer_id)
+        if customer is not None:
+            customer_chat.sync_members(customer)
+            db.session.commit()
+
     memberships = ChatMember.query.filter_by(user_id=user.id).all()
     rooms = [m.room for m in memberships
              if m.room.organization_id == user.organization_id]
@@ -1723,6 +1738,26 @@ def list_chat_rooms(user):
     out.sort(key=lambda r: (r["last_message"] or {}).get("created_at") or "",
              reverse=True)
     return jsonify(out), 200
+
+
+@api.route("/customers/<int:cid>/chat-room", methods=["POST"])
+@permission_required("workspace.view")
+def open_customer_chat_room(user, cid):
+    """Open (creating it if needed) the conversation attached to a customer.
+
+    Staff on the file get in through the team. When nobody is assigned yet, any
+    staff member who may see customers can pick the conversation up — and doing
+    so makes them a participant, so the client gets an answer instead of
+    silence.
+    """
+    from api.engine import customer_chat
+    customer = Customer.query.get(cid)
+    if not customer_chat.can_open(user, customer, has_permission):
+        raise APIException("Not allowed to open this conversation",
+                           status_code=403)
+    room = customer_chat.sync_members(customer, extra_user_ids=[user.id])
+    db.session.commit()
+    return jsonify(_room_summary(room, user)), 200
 
 
 @api.route("/chat/rooms", methods=["POST"])

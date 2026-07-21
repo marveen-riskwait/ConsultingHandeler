@@ -59,6 +59,18 @@ export const Customer360 = () => {
   const [enriching, setEnriching] = useState(false);
   const [enrichNote, setEnrichNote] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [openingChat, setOpeningChat] = useState(false);
+
+  // The client conversation belongs to the customer file: opening it joins the
+  // team room rather than starting a private thread with whoever clicked.
+  const openClientChat = async () => {
+    setOpeningChat(true);
+    try {
+      const room = await api.openCustomerRoom(id);
+      navigate(`/chat?room=${room.id}`);
+    } catch (e) { setError(e.message); }
+    finally { setOpeningChat(false); }
+  };
   const navigate = useNavigate();
 
   const runEnrichment = async () => {
@@ -181,6 +193,12 @@ export const Customer360 = () => {
           <Link to={`/assistant?customer=${id}`} className="btn btn-outline-secondary">
             <i className="fa-solid fa-robot" /> Ask Copilot
           </Link>
+          <button className="btn btn-outline-secondary" onClick={openClientChat}
+            disabled={openingChat}
+            title="The conversation with this client, read by the team on the file">
+            <i className="fa-solid fa-comments" />{" "}
+            {openingChat ? "Opening…" : "Client chat"}
+          </button>
           {can(store.user, "kyc.edit") && (
             <button className="btn btn-outline-secondary" onClick={runEnrichment}
               disabled={enriching} title="Auto-fill from public sources (registries, LEI, adverse media)">

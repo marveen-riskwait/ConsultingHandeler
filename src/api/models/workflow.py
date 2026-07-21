@@ -21,6 +21,10 @@ class Case(db.Model):
     priority: Mapped[str] = mapped_column(String(20), default="MEDIUM")
     status: Mapped[str] = mapped_column(String(30), default="OPEN")
     assigned_to: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=True)
+    # The team that owns the case. Set by the assignment rules; it is what the
+    # customer conversation is addressed to, so the client talks to a team
+    # rather than to whoever happened to be assigned that day.
+    team_id: Mapped[int] = mapped_column(ForeignKey("team.id"), nullable=True)
 
     decision: Mapped[str] = mapped_column(String(60), nullable=True)
     decision_reason: Mapped[str] = mapped_column(Text, nullable=True)
@@ -41,6 +45,7 @@ class Case(db.Model):
             "priority": self.priority,
             "status": self.status,
             "assigned_to": self.assigned_to,
+            "team_id": self.team_id,
             "decision": self.decision,
             "decision_reason": self.decision_reason,
             "decided_by": self.decided_by,

@@ -144,6 +144,8 @@ export const api = {
   // Team chat
   chatUsers: () => request("/chat/users"),
   chatRooms: () => request("/chat/rooms"),
+  openCustomerRoom: (customerId) =>
+    request(`/customers/${customerId}/chat-room`, { method: "POST" }),
   createChatRoom: (payload) => request("/chat/rooms", { method: "POST", body: payload }),
   addChatMember: (roomId, userId) =>
     request(`/chat/rooms/${roomId}/members`, { method: "POST", body: { user_id: userId } }),

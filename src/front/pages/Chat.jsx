@@ -26,7 +26,7 @@ const fmtTime = (iso) =>
   new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 
 // ------------------------------------------------------------ message bubble
-const Bubble = ({ m, mine, onPreview }) => {
+const Bubble = ({ m, mine, onPreview, asOrganization }) => {
   if (m.kind === "SYSTEM" || m.kind === "CALL") {
     return <div className="ch-system">{m.body}</div>;
   }
@@ -37,7 +37,15 @@ const Bubble = ({ m, mine, onPreview }) => {
   return (
     <div className={`ch-msg ${mine ? "mine" : ""}`}>
       <div className="ch-bubble">
-        {!mine && <div className="ch-sender">{m.sender_name}</div>}
+        {!mine && (
+          <div className="ch-sender">
+            {/* A client is answered by the organization, never by a named
+                individual — while staff keep seeing which colleague wrote it. */}
+            {asOrganization && m.from_staff
+              ? (m.organization_name || "Compliance team")
+              : m.sender_name}
+          </div>
+        )}
         {m.kind === "TEXT" && <span>{m.body}</span>}
         {m.kind === "AUDIO" && (
           <audio controls src={mediaSrc(m.media_url)} className="ch-audio" />
@@ -295,6 +303,14 @@ export const Chat = () => {
     loadRooms();
     api.chatUsers().then(setColleagues).catch(() => {});
   }, [loadRooms]);
+
+  // Arriving from a customer file (/chat?room=12) opens that conversation.
+  useEffect(() => {
+    const wanted = Number(new URLSearchParams(window.location.search).get("room"));
+    if (wanted && rooms.some((r) => r.id === wanted) && activeId !== wanted) {
+      openRoom(wanted);
+    }
+  }, [rooms, activeId, openRoom]);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -559,9 +575,13 @@ export const Chat = () => {
               <header className="ch-head">
                 <b>{active.display_name}</b>
                 <span className="muted" style={{ fontSize: ".78rem" }}>
-                  {active.is_group
-                    ? `${active.members.length} members`
-                    : "Direct message"}
+                  {active.is_customer_room
+                    ? (store.user?.is_portal_user
+                        ? "Your compliance team"
+                        : `Customer conversation · ${active.members.length} on the file`)
+                    : active.is_group
+                      ? `${active.members.length} members`
+                      : "Direct message"}
                 </span>
                 <span style={{ flex: 1 }} />
                 {!call && (
@@ -624,6 +644,7 @@ export const Chat = () => {
               <div className="ch-messages" ref={scrollRef}>
                 {messages.map((m) => (
                   <Bubble key={m.id} m={m} mine={m.sender_id === myId}
+                    asOrganization={!!store.user?.is_portal_user}
                     onPreview={setPreview} />
                 ))}
                 {typing && <div className="ch-typing">{typing} is typing…</div>}

@@ -9,6 +9,7 @@ from datetime import timedelta
 
 from flask import request, jsonify, Blueprint
 from flask_cors import CORS
+from sqlalchemy import func
 
 from api.models import (
     db, Organization, User, Role, Permission, Customer, Document, RiskAssessment,
@@ -1971,6 +1972,36 @@ def watchlist_search(user):
         raise APIException("q must be at least 3 characters", status_code=400)
     hits = watchlist_service.search(q, limit=25)
     return jsonify([{**e.serialize(), "score": score} for e, score in hits]), 200
+
+
+@api.route("/name-suggestions", methods=["GET"])
+@permission_required("customer.create", "customer.view")
+def name_suggestions(user):
+    """Type-ahead for the customer name field.
+
+    Two groups, because two different mistakes happen while typing a name.
+    `customers` catches the duplicate you are about to create. `watchlist`
+    offers the canonical legal spelling from the public lists — and warns, at
+    entry time rather than after onboarding, that the name is sanctioned.
+    """
+    q = (request.args.get("q") or "").strip()
+    if len(q) < 3:
+        return jsonify({"customers": [], "watchlist": []}), 200
+
+    like = f"%{q.lower()}%"
+    existing = (Customer.query
+                .filter(Customer.organization_id == user.organization_id,
+                        func.lower(Customer.name).like(like))
+                .order_by(Customer.name).limit(10).all())
+    hits = watchlist_service.suggest(q, limit=25)
+    return jsonify({
+        "customers": [{"id": c.id, "name": c.name, "status": c.status,
+                       "customer_type": c.customer_type,
+                       "risk_level": c.risk_level} for c in existing],
+        "watchlist": [{"name": e.name, "source": e.source,
+                       "entity_type": e.entity_type, "country": e.country,
+                       "programs": e.programs or []} for e in hits],
+    }), 200
 
 
 @api.route("/watchlists/ingest", methods=["POST"])

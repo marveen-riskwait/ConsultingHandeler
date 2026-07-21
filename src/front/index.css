@@ -482,3 +482,29 @@ h1, h2, h3, h4, .co-serif {
   padding: 0 .2rem; line-height: 1;
 }
 .kf-doc-remove:hover { color: var(--sev-critical); }
+
+/* Customer-name type-ahead (components/NameSuggest.jsx). Five rows visible,
+   the rest on scroll — long enough to be useful, short enough not to bury the
+   form underneath it. */
+.ns-wrap { position: relative; }
+.ns-spin { position: absolute; right: .7rem; top: .75rem; color: var(--co-muted); font-size: .8rem; }
+.ns-pop {
+  position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 50;
+  max-height: 15.5rem; overflow-y: auto;
+  background: #fff; border: 1px solid var(--co-border); border-radius: 10px;
+  box-shadow: 0 14px 32px rgba(15, 23, 42, .16);
+}
+.ns-group {
+  font-size: .68rem; font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--co-muted);
+  padding: .45rem .7rem .2rem;
+}
+.ns-item {
+  display: flex; align-items: center; gap: .5rem; width: 100%;
+  padding: .45rem .7rem; border: 0; background: transparent;
+  text-align: left; font-size: .87rem; cursor: pointer;
+}
+.ns-item:hover { background: #eef1f6; }
+.ns-name { flex: 1; color: var(--co-ink); }
+.ns-meta { font-size: .72rem; color: var(--co-muted); white-space: nowrap; }
+.ns-warn { color: var(--sev-high); font-size: .8rem; }

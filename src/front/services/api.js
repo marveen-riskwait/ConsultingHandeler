@@ -34,6 +34,7 @@ export const api = {
 
   // customers
   customers: (archived) => request(`/customers${archived ? "?archived=1" : ""}`),
+  nameSuggestions: (q) => request(`/name-suggestions?q=${encodeURIComponent(q)}`),
   createCustomer: (payload) => request("/customers", { method: "POST", body: payload }),
   customer: (id) => request(`/customers/${id}`),
   screen: (id) => request(`/customers/${id}/screen`, { method: "POST" }),

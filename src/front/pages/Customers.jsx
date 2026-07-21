@@ -5,6 +5,7 @@ import useGlobalReducer from "../hooks/useGlobalReducer";
 import { can } from "../permissions/can";
 import { DeleteCustomerModal } from "../components/DeleteCustomerModal";
 import { RowMenu } from "../components/RowMenu";
+import { NameSuggest } from "../components/NameSuggest";
 
 const EMPTY_FORM = {
   name: "", customer_type: "INDIVIDUAL", country: "",
@@ -89,8 +90,9 @@ export const Customers = () => {
           <div className="row g-2">
             <div className="col-md-6">
               <label className="form-label">Name</label>
-              <input className="form-control" value={form.name} required
-                onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              <NameSuggest value={form.name}
+                placeholder="Start typing — existing files and watchlists appear"
+                onChange={(name) => setForm({ ...form, name })} />
             </div>
             <div className="col-md-3">
               <label className="form-label">Type</label>

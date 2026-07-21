@@ -100,3 +100,72 @@ def test_kyb_lookup_without_key_fails_cleanly(client, tokens, app):
     r = client.post(f"/api/customers/{cid}/kyb-lookup", headers=auth(t))
     assert r.status_code == 409
     assert "missing API key" in r.get_json()["message"]
+
+
+def test_fuzzy_matching_catches_misspellings_without_swallowing_everything(app):
+    """Sanctions evasion is spelled wrong on purpose, so a one-letter change
+    must not be a clean pass — while unrelated names must still miss."""
+    from api.engine import watchlist_service
+    watchlist_service.ingest_all(prefer_live=False)
+
+    exact = watchlist_service.search("Tornado Cash")
+    assert exact and exact[0][1] >= 90
+
+    for typo in ("Tornado Cach", "Tornadoo Cash", "Tornado Csah"):
+        hits = watchlist_service.search(typo)
+        assert hits, f"{typo} should still reach the listed entity"
+        # Flagged as a near miss, never dressed up as an exact hit.
+        assert hits[0][1] < 90
+        assert hits[0][1] >= 70
+
+    # Tolerance must not turn into "everything matches".
+    assert watchlist_service.search("Totally Clean Bakery") == []
+    assert watchlist_service.search("Zurich Cheese Imports") == []
+
+
+def test_fuzzy_threshold_is_configurable(app, monkeypatch):
+    """The false-positive/false-negative trade-off is a compliance setting, not
+    a hardcoded constant."""
+    from api.engine import watchlist_service
+    watchlist_service.ingest_all(prefer_live=False)
+
+    monkeypatch.setattr(watchlist_service, "FUZZY_THRESHOLD", 0.99)
+    assert watchlist_service.search("Tornado Cach") == []
+    monkeypatch.setattr(watchlist_service, "FUZZY_THRESHOLD", 0.84)
+    assert watchlist_service.search("Tornado Cach")
+
+
+def test_suggest_is_substring_and_narrows_as_you_type(app):
+    """The type-ahead is a different primitive: letters you typed, appearing
+    somewhere in the name — narrowing as the fragment grows."""
+    from api.engine import watchlist_service
+    watchlist_service.ingest_all(prefer_live=False)
+
+    assert watchlist_service.suggest("to") == []          # too short to be useful
+    broad = watchlist_service.suggest("tor")
+    assert broad
+    narrow = watchlist_service.suggest("tornado")
+    assert len(narrow) <= len(broad)
+    assert all("tornado" in e.name_normalized or
+               any("tornado" in a for a in (e.aliases_normalized or []))
+               for e in narrow)
+    # Names starting with the fragment come first.
+    assert broad[0].name_normalized.startswith("tor") or \
+        "tor" in broad[0].name_normalized
+
+
+def test_name_suggestions_endpoint_groups_customers_and_watchlist(client, tokens, app):
+    from api.engine import watchlist_service
+    watchlist_service.ingest_all(prefer_live=False)
+    t = tokens["officer@test.io"]
+
+    client.post("/api/customers", headers=auth(t),
+                json={"name": "Tornado Logistics SARL", "customer_type": "COMPANY"})
+
+    assert client.get("/api/name-suggestions?q=to",
+                      headers=auth(t)).get_json() == {"customers": [], "watchlist": []}
+
+    d = client.get("/api/name-suggestions?q=tornado", headers=auth(t)).get_json()
+    assert any(c["name"] == "Tornado Logistics SARL" for c in d["customers"])
+    assert any("tornado" in w["name"].lower() for w in d["watchlist"])
+    assert all("source" in w for w in d["watchlist"])

@@ -442,3 +442,30 @@ h1, h2, h3, h4, .co-serif {
 
 .cop-composer { display: flex; gap: .55rem; padding: .85rem 1rem 0; border-top: 1px solid var(--co-border); }
 .cop-disclaimer { color: var(--co-muted); font-size: .72rem; padding: .5rem 1rem .9rem; margin: 0; }
+
+/* Overflow menu for row-level secondary actions (see components/RowMenu.jsx).
+   Deliberately low-contrast until hovered: destructive actions should be
+   reachable, not tempting. */
+.row-menu { position: relative; display: inline-flex; }
+.row-menu-trigger {
+  border: 0; background: transparent; color: var(--co-muted);
+  width: 30px; height: 30px; border-radius: 8px; line-height: 1;
+  cursor: pointer; transition: background .12s ease, color .12s ease;
+}
+.row-menu-trigger:hover, .row-menu-trigger[aria-expanded="true"] {
+  background: var(--co-surface-alt, #eef1f6); color: var(--co-ink, #0f172a);
+}
+.row-menu-pop {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 40;
+  min-width: 190px; padding: .3rem; border-radius: 10px;
+  background: #fff; border: 1px solid var(--co-border);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, .16);
+}
+.row-menu-item {
+  display: flex; align-items: center; gap: .5rem; width: 100%;
+  padding: .45rem .6rem; border: 0; border-radius: 7px; background: transparent;
+  font-size: .84rem; text-align: left; color: var(--co-ink, #0f172a); cursor: pointer;
+}
+.row-menu-item:hover { background: var(--co-surface-alt, #eef1f6); }
+.row-menu-item.danger { color: var(--sev-critical); }
+.row-menu-item.danger:hover { background: #fde7e7; }

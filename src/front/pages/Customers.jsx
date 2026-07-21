@@ -4,6 +4,12 @@ import { api } from "../services/api";
 import useGlobalReducer from "../hooks/useGlobalReducer";
 import { can } from "../permissions/can";
 import { DeleteCustomerModal } from "../components/DeleteCustomerModal";
+import { RowMenu } from "../components/RowMenu";
+
+const EMPTY_FORM = {
+  name: "", customer_type: "INDIVIDUAL", country: "",
+  business_activity: "", complex_ownership: false,
+};
 
 export const Customers = () => {
   const { store } = useGlobalReducer();
@@ -16,7 +22,9 @@ export const Customers = () => {
   const [customers, setCustomers] = useState([]);
   const [error, setError] = useState(null);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ name: "", customer_type: "INDIVIDUAL", country: "", business_activity: "", complex_ownership: false });
+  const [creating, setCreating] = useState(false);
+  const [notice, setNotice] = useState(null);
+  const [form, setForm] = useState(EMPTY_FORM);
 
   const load = () => api.customers(archived).then(setCustomers).catch((e) => setError(e.message));
   useEffect(() => { load(); }, [archived]);
@@ -28,13 +36,27 @@ export const Customers = () => {
 
   const create = async (e) => {
     e.preventDefault();
+    if (creating) return;                    // no double submit on a slow POST
+    setCreating(true); setError(null);
     try {
-      await api.createCustomer(form);
-      setForm({ name: "", customer_type: "INDIVIDUAL", country: "", business_activity: "", complex_ownership: false });
+      const created = await api.createCustomer(form);
+      // Show the new file straight away from the POST response, then reconcile
+      // with the server (risk scoring runs on create, so the row is refreshed).
+      setCustomers((prev) => [created, ...prev.filter((c) => c.id !== created.id)]);
+      setForm(EMPTY_FORM);
       setShowForm(false);
+      setNotice(`Customer registered — ${created.name}.`);
       load();
     } catch (err) { setError(err.message); }
+    finally { setCreating(false); }
   };
+
+  // Let the confirmation fade instead of lingering over the list.
+  useEffect(() => {
+    if (!notice) return undefined;
+    const t = setTimeout(() => setNotice(null), 5000);
+    return () => clearTimeout(t);
+  }, [notice]);
 
   return (
     <>
@@ -56,6 +78,11 @@ export const Customers = () => {
       </div>
 
       {error && <div className="alert alert-danger">{error}</div>}
+      {notice && (
+        <div className="alert alert-success py-2">
+          <i className="fa-solid fa-circle-check" /> {notice}
+        </div>
+      )}
 
       {showForm && (
         <form className="co-card" onSubmit={create} style={{ marginBottom: "1rem" }}>
@@ -91,7 +118,9 @@ export const Customers = () => {
               </div>
             </div>
           </div>
-          <button className="btn btn-co mt-3">Create</button>
+          <button className="btn btn-co mt-3" disabled={creating}>
+            {creating ? "Creating…" : "Create"}
+          </button>
         </form>
       )}
 
@@ -115,19 +144,17 @@ export const Customers = () => {
             </div>
             <span className={`chip ${cu.risk_level}`}>{cu.risk_level} · {cu.risk_score}</span>
             <Link to={`/customers/${cu.id}`} className="btn btn-sm btn-outline-secondary">Open</Link>
-            {canRemove && archived && (
-              <button className="btn btn-sm btn-outline-primary" title="Restore to the active book"
-                onClick={() => restore(cu)}>
-                <i className="fa-solid fa-rotate-left" /> Restore
-              </button>
-            )}
-            {canRemove && (
-              <button className="btn btn-sm btn-outline-danger"
-                title={archived ? "Delete this archived record" : "Remove customer"}
-                onClick={() => setDeleting(cu)}>
-                <i className="fa-solid fa-trash" />
-              </button>
-            )}
+            <RowMenu items={[
+              archived && canRemove && {
+                label: "Restore to active", icon: "fa-solid fa-rotate-left",
+                onClick: () => restore(cu),
+              },
+              canRemove && {
+                label: archived ? "Delete record…" : "Remove customer…",
+                icon: "fa-solid fa-trash", danger: true,
+                onClick: () => setDeleting(cu),
+              },
+            ]} />
           </div>
         ))}
       </div>

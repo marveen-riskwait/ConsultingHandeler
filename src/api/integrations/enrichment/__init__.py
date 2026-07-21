@@ -8,7 +8,8 @@ provenance, raises discrepancies and never overwrites human-declared data.
 Everything here is FREE and keyless (Companies House wants a free key):
 UK Companies House (profile/officers/PSC-UBO), French registry
 (recherche-entreprises), GLEIF LEI (global), SEC EDGAR (US filers), EU VAT
-validation via VIES (all member states), and GDELT adverse media. Paid sources
+validation via VIES (all member states), GDELT adverse media, and a Wikidata PEP *lead* (a lead, not a
+determination — see the module docstring). Paid sources
 (OpenSanctions PEP, OpenCorporates…) plug in the same way later.
 
 Coverage is deliberately layered: GLEIF answers anywhere but only for entities
@@ -21,6 +22,7 @@ from api.integrations.enrichment.gleif import GleifSource
 from api.integrations.enrichment.sirene import FrenchRegistrySource
 from api.integrations.enrichment.sec_edgar import SecEdgarSource
 from api.integrations.enrichment.vies import ViesSource
+from api.integrations.enrichment.wikidata_pep import WikidataPepSource
 from api.integrations.enrichment.adverse_media import AdverseMediaSource
 
 SOURCES = [
@@ -29,6 +31,7 @@ SOURCES = [
     SecEdgarSource(),
     ViesSource(),
     GleifSource(),
+    WikidataPepSource(),
     AdverseMediaSource(),
 ]
 

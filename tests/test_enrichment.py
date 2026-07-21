@@ -259,3 +259,61 @@ def test_new_sources_are_registered_for_companies(app):
                       organization_id=1)
     person_names = {s.name for s in sources_for(person)}
     assert "vies" not in person_names and "sec_edgar" not in person_names
+
+
+# --- Wikidata PEP lead -------------------------------------------------------
+
+def test_wikidata_pep_is_a_lead_and_never_a_determination(app, monkeypatch):
+    """It must not set is_pep or score risk on its own: the confidence stays
+    below the auto-verify threshold so a human always confirms."""
+    from api.integrations.enrichment import wikidata_pep as wp
+    from api.models import Customer
+
+    monkeypatch.setattr(wp, "_search", lambda n: {"id": "Q123", "label": "A Politician"})
+    monkeypatch.setattr(wp, "_claims", lambda q: {"P39": [_claim("Q191954")],
+                                                  "P102": [_claim("Q7278")]})
+    monkeypatch.setattr(wp, "_labels", lambda ids: {"Q191954": "President of France",
+                                                    "Q7278": "A Party"})
+    customer = Customer(name="A Politician", customer_type="INDIVIDUAL",
+                        organization_id=1)
+    out = wp.WikidataPepSource().run(customer)
+
+    assert out["ok"] is True
+    assert "Possible PEP" in out["detail"] and "Confirm" in out["detail"]
+    assert "President of France" in out["fields"]["pep_signal"]["value"]
+    # Below the 0.9 trusted-source threshold, so it is never auto-verified.
+    assert out["fields"]["pep_signal"]["confidence"] < 0.9
+
+
+def _claim(qid):
+    return {"mainsnak": {"datavalue": {"value": {"id": qid}}}}
+
+
+def test_no_wikidata_entry_is_not_a_clearance(app, monkeypatch):
+    """Silence means Wikidata does not know — coverage is skewed to famous
+    people. Reporting it as "not a PEP" would be dangerous."""
+    from api.integrations.enrichment import wikidata_pep as wp
+    from api.models import Customer
+
+    monkeypatch.setattr(wp, "_search", lambda n: None)
+    out = wp.WikidataPepSource().run(
+        Customer(name="Jean Discret", customer_type="INDIVIDUAL", organization_id=1))
+    assert out["ok"] is False
+    assert "says nothing about" in out["detail"]
+    assert out["fields"] == {}
+
+    monkeypatch.setattr(wp, "_search", lambda n: {"id": "Q9", "label": "A Baker"})
+    monkeypatch.setattr(wp, "_claims", lambda q: {})
+    out2 = wp.WikidataPepSource().run(
+        Customer(name="A Baker", customer_type="INDIVIDUAL", organization_id=1))
+    assert out2["ok"] is False and "Not a clearance" in out2["detail"]
+
+
+def test_pep_lead_applies_to_individuals_only(app):
+    from api.integrations.enrichment import sources_for
+    from api.models import Customer
+
+    person = Customer(name="X", customer_type="INDIVIDUAL", organization_id=1)
+    company = Customer(name="Y", customer_type="COMPANY", organization_id=1)
+    assert "wikidata_pep" in {s.name for s in sources_for(person)}
+    assert "wikidata_pep" not in {s.name for s in sources_for(company)}

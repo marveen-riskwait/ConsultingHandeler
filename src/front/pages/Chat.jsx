@@ -7,6 +7,20 @@ const BASE = (import.meta.env.VITE_BACKEND_URL || "").replace(/\/$/, "");
 const mediaSrc = (url) => (url && url.startsWith("/") ? `${BASE}${url}` : url);
 const ICE = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
 
+// Mirror of the backend's MIME -> message-kind mapping (for previews).
+const kindFor = (mime) => {
+  if ((mime || "").startsWith("image/")) return "IMAGE";
+  if ((mime || "").startsWith("audio/")) return "AUDIO";
+  if ((mime || "").startsWith("video/")) return "VIDEO";
+  return "FILE";
+};
+
+const fmtSize = (bytes) => {
+  if (!bytes && bytes !== 0) return "";
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
 const fmtTime = (iso) =>
   new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 
@@ -61,6 +75,10 @@ export const Chat = () => {
   const [groupForm, setGroupForm] = useState({ name: "", ids: [] });
   const [recording, setRecording] = useState(false);
   const [error, setError] = useState(null);
+  // Staged attachment (voice note / file): previewed in the composer, sent
+  // only when the user confirms — never immediately.
+  const [pending, setPending] = useState(null); // {file, kind, url, name, size}
+  const [sending, setSending] = useState(false);
 
   // Call state. peersRef: user_id -> RTCPeerConnection.
   const [call, setCall] = useState(null);          // {roomId, media, joined}
@@ -84,6 +102,8 @@ export const Chat = () => {
 
   const openRoom = useCallback((id) => {
     setActiveId(id);
+    // Discard any staged attachment — it was meant for the previous room.
+    setPending((p) => { if (p) URL.revokeObjectURL(p.url); return null; });
     api.chatMessages(id).then(setMessages).catch((e) => setError(e.message));
     api.markChatRead(id).then(loadRooms).catch(() => {});
   }, [loadRooms]);
@@ -289,23 +309,48 @@ export const Chat = () => {
     } catch (e) { setError(e.message); }
   };
 
+  // Stage an attachment for preview instead of sending it right away.
+  const stageFile = (file) => {
+    if (!file || !activeId) return;
+    setPending((p) => {
+      if (p) URL.revokeObjectURL(p.url);
+      return { file, kind: kindFor(file.type), url: URL.createObjectURL(file),
+               name: file.name, size: file.size };
+    });
+  };
+
+  const cancelPending = () => {
+    setPending((p) => {
+      if (p) URL.revokeObjectURL(p.url);
+      return null;
+    });
+  };
+
+  const sendPending = async () => {
+    if (!pending || sending) return;
+    setSending(true);
+    setError(null);
+    try {
+      const stored = await api.uploadChatMedia(pending.file);
+      const caption = draft.trim() || null;
+      await deliver({
+        kind: stored.kind, media_url: stored.url, media_type: stored.media_type,
+        // FILE bubbles show body as the link label; media kinds show it as a caption.
+        body: stored.kind === "FILE" ? (caption || pending.name) : caption,
+        meta: { filename: pending.name, size: pending.size },
+      });
+      cancelPending();
+      setDraft("");
+    } catch (e) { setError(e.message); }
+    finally { setSending(false); }
+  };
+
   const send = () => {
+    if (pending) return sendPending();
     const body = draft.trim();
     if (!body || !activeId) return;
     setDraft("");
     deliver({ body });
-  };
-
-  const attach = async (file) => {
-    if (!file || !activeId) return;
-    setError(null);
-    try {
-      const stored = await api.uploadChatMedia(file);
-      await deliver({
-        kind: stored.kind, media_url: stored.url, media_type: stored.media_type,
-        body: stored.kind === "FILE" ? file.name : null,
-      });
-    } catch (e) { setError(e.message); }
   };
 
   const toggleVoiceNote = async () => {
@@ -319,10 +364,11 @@ export const Chat = () => {
       const rec = new MediaRecorder(stream);
       const chunks = [];
       rec.ondataavailable = (e) => chunks.push(e.data);
-      rec.onstop = async () => {
+      rec.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
         const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
-        await attach(new File([blob], "voice-note.webm", { type: blob.type }));
+        // Stage it — the user listens, captions, then sends (or cancels).
+        stageFile(new File([blob], "voice-note.webm", { type: blob.type }));
       };
       rec.start();
       recorderRef.current = rec;
@@ -538,26 +584,71 @@ export const Chat = () => {
                 {typing && <div className="ch-typing">{typing} is typing…</div>}
               </div>
 
-              <div className="ch-composer">
-                <label className="btn btn-sm btn-outline-secondary" title="Attach file">
-                  <i className="fa-solid fa-paperclip" />
-                  <input type="file" hidden
-                    onChange={(e) => { attach(e.target.files[0]); e.target.value = ""; }} />
-                </label>
-                <button className={`btn btn-sm ${recording ? "btn-danger" : "btn-outline-secondary"}`}
-                  title="Voice note" onClick={toggleVoiceNote}>
-                  <i className={`fa-solid ${recording ? "fa-stop" : "fa-microphone"}`} />
-                </button>
-                <input className="form-control" placeholder="Message…"
-                  value={draft}
-                  onChange={(e) => {
-                    setDraft(e.target.value);
-                    getSocket()?.emit("chat:typing", { room_id: activeId });
-                  }}
-                  onKeyDown={(e) => e.key === "Enter" && send()} />
-                <button className="btn btn-co" onClick={send} disabled={!draft.trim()}>
-                  <i className="fa-solid fa-paper-plane" />
-                </button>
+              <div className="ch-composer-wrap">
+                {recording && (
+                  <div className="ch-pending ch-recording">
+                    <span className="ch-rec-dot" />
+                    <span>Recording voice note… press <i className="fa-solid fa-stop" /> to finish.</span>
+                  </div>
+                )}
+
+                {pending && (
+                  <div className="ch-pending">
+                    <div className="ch-pending-preview">
+                      {pending.kind === "AUDIO" && (
+                        <audio controls src={pending.url} className="ch-audio" />
+                      )}
+                      {pending.kind === "IMAGE" && (
+                        <img src={pending.url} alt="" className="ch-pending-img" />
+                      )}
+                      {pending.kind === "VIDEO" && (
+                        <video controls src={pending.url} className="ch-pending-video" />
+                      )}
+                      {pending.kind === "FILE" && (
+                        <span className="ch-pending-file">
+                          <i className="fa-solid fa-paperclip" /> {pending.name}
+                        </span>
+                      )}
+                      <span className="ch-pending-meta">
+                        {pending.kind === "AUDIO" && pending.name === "voice-note.webm"
+                          ? "Voice note" : pending.name} · {fmtSize(pending.size)}
+                      </span>
+                    </div>
+                    <span className="ch-pending-hint">
+                      Add a caption below, then send — or cancel.
+                    </span>
+                    <button className="btn btn-sm btn-outline-danger" title="Cancel attachment"
+                      onClick={cancelPending} disabled={sending}>
+                      <i className="fa-solid fa-xmark" />
+                    </button>
+                  </div>
+                )}
+
+                <div className="ch-composer">
+                  <label className={`btn btn-sm btn-outline-secondary ${pending || recording ? "disabled" : ""}`}
+                    title="Attach file">
+                    <i className="fa-solid fa-paperclip" />
+                    <input type="file" hidden disabled={!!pending || recording}
+                      onChange={(e) => { stageFile(e.target.files[0]); e.target.value = ""; }} />
+                  </label>
+                  <button className={`btn btn-sm ${recording ? "btn-danger" : "btn-outline-secondary"}`}
+                    title={recording ? "Stop recording" : "Record voice note"}
+                    disabled={!!pending} onClick={toggleVoiceNote}>
+                    <i className={`fa-solid ${recording ? "fa-stop" : "fa-microphone"}`} />
+                  </button>
+                  <input className="form-control"
+                    placeholder={pending ? "Add a caption (optional)…" : "Message…"}
+                    value={draft}
+                    onChange={(e) => {
+                      setDraft(e.target.value);
+                      getSocket()?.emit("chat:typing", { room_id: activeId });
+                    }}
+                    onKeyDown={(e) => e.key === "Enter" && send()} />
+                  <button className="btn btn-co" onClick={send}
+                    disabled={sending || (!pending && !draft.trim())}>
+                    <i className={`fa-solid ${sending ? "fa-spinner fa-spin" : "fa-paper-plane"}`} />
+                  </button>
+                </div>
               </div>
             </>
           )}

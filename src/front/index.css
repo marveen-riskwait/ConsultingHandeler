@@ -269,9 +269,29 @@ h1, h2, h3, h4, .co-serif {
 .ch-image { max-width: 240px; border-radius: 8px; display: block; }
 .ch-file { color: inherit; text-decoration: underline; }
 
-.ch-composer { display: flex; gap: .45rem; align-items: center; flex-shrink: 0;
-  padding: .7rem .9rem; border-top: 1px solid var(--co-border); }
+.ch-composer-wrap { flex-shrink: 0; border-top: 1px solid var(--co-border); }
+.ch-composer { display: flex; gap: .45rem; align-items: center;
+  padding: .7rem .9rem; }
 .ch-composer .btn { flex-shrink: 0; }
+
+/* Staged attachment preview (review / caption / cancel before sending). */
+.ch-pending {
+  display: flex; align-items: center; gap: .8rem;
+  background: #f7f8fb; border-bottom: 1px solid var(--co-border);
+  padding: .55rem .9rem; font-size: .82rem;
+}
+.ch-pending-preview { display: flex; align-items: center; gap: .6rem; min-width: 0; }
+.ch-pending-img { max-height: 64px; border-radius: 8px; }
+.ch-pending-video { max-height: 80px; border-radius: 8px; }
+.ch-pending-file { font-weight: 600; }
+.ch-pending-meta { color: var(--co-muted); font-size: .74rem; white-space: nowrap; }
+.ch-pending-hint { color: var(--co-muted); font-size: .74rem; margin-left: auto; }
+.ch-pending .btn { flex-shrink: 0; }
+
+.ch-recording { background: #fde7e7; border-bottom: 1px solid #f5c2c7; color: #842029; }
+.ch-rec-dot { width: 10px; height: 10px; border-radius: 50%; background: #dc2626;
+  animation: chpulse 1s infinite; flex-shrink: 0; }
+@keyframes chpulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
 
 .ch-ringing {
   display: flex; align-items: center; gap: .8rem; margin-bottom: 1rem;

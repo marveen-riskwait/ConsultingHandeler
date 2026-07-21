@@ -101,3 +101,43 @@ def test_unknown_permission_code_rejected(client, tokens):
     r = client.post(f"/api/users/{uid}/permissions", headers=auth(admin),
                     json={"code": "not.a.permission", "enabled": True})
     assert r.status_code == 400
+
+
+def test_boot_catalog_sync_makes_new_permissions_grantable_without_resetting_roles(client, tokens):
+    """A permission added in code must become grantable on a plain deploy.
+
+    The admin matrix is served from the code catalog, but granting looks up a
+    Permission row — so before this sync ran at boot, a freshly pulled
+    permission was visible and un-grantable ("Unknown permission code"). The
+    sync is catalog-only on purpose: role assignments an administrator edited
+    by hand must survive it.
+    """
+    from api.models import PERMISSION_CATALOG, Role
+    from api.rbac import sync_permissions
+
+    admin = tokens["admin@test.io"]
+    roles = client.get("/api/roles", headers=auth(admin)).get_json()
+    analyst = next(r for r in roles if r["name"] == "KYC_ANALYST")
+
+    # An edit an administrator made by hand in the matrix.
+    assert client.post(f"/api/roles/{analyst['id']}/permissions", headers=auth(admin),
+                       json={"code": "audit.view", "enabled": True}).status_code == 200
+
+    PERMISSION_CATALOG.append(("demo.shipped_later", "Permission added in a later release"))
+    try:
+        # An install whose database predates the new permission.
+        r = client.post(f"/api/roles/{analyst['id']}/permissions", headers=auth(admin),
+                        json={"code": "demo.shipped_later", "enabled": True})
+        assert r.status_code == 400
+
+        sync_permissions()          # what happens on every boot now
+
+        r = client.post(f"/api/roles/{analyst['id']}/permissions", headers=auth(admin),
+                        json={"code": "demo.shipped_later", "enabled": True})
+        assert r.status_code == 200
+    finally:
+        PERMISSION_CATALOG.pop()
+
+    # The hand-made edit survived the sync.
+    role = Role.query.get(analyst["id"])
+    assert "audit.view" in {p.code for p in role.permissions}

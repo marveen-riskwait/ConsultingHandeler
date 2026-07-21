@@ -148,10 +148,14 @@ def me(user):
 @api.route("/customers", methods=["GET"])
 @permission_required("customer.view")
 def list_customers(user):
-    customers = (Customer.query
-                 .filter_by(organization_id=user.organization_id)
-                 .order_by(Customer.risk_score.desc(), Customer.created_at.desc())
-                 .all())
+    """The active book. Archived files are out of the way but never lost —
+    `?archived=1` lists them so they can be reviewed or restored."""
+    only_archived = request.args.get("archived") in ("1", "true", "yes")
+    query = Customer.query.filter_by(organization_id=user.organization_id)
+    query = (query.filter(Customer.status == "ARCHIVED") if only_archived
+             else query.filter(Customer.status != "ARCHIVED"))
+    customers = query.order_by(Customer.risk_score.desc(),
+                               Customer.created_at.desc()).all()
     return jsonify([c.serialize() for c in customers]), 200
 
 
@@ -1939,14 +1943,21 @@ def watchlist_ingest(user):
 
 
 @api.route("/customers/<int:cid>/deletion-check", methods=["GET"])
-@permission_required("customer.delete")
+@permission_required("customer.update")
 def customer_deletion_check(user, cid):
-    """What would happen if this customer were deleted (shown in the modal)."""
+    """What would happen if this customer were removed (shown in the modal).
+
+    Gated on customer.update because the default action is archiving, which
+    anyone who can edit the file may do. `can_delete` tells the modal whether
+    to offer the destructive "delete from the database" option on top.
+    """
     from api.engine import customer_deletion
     customer = _get_customer_for(user, cid)
     return jsonify({
         "customer": customer.serialize(),
         "blockers": customer_deletion.blockers(customer),
+        "can_delete": has_permission(user, "customer.delete"),
+        "can_override": has_permission(user, "organization.update"),
         "counts": {
             "cases": Case.query.filter_by(customer_id=cid).count(),
             "tasks": Task.query.filter_by(customer_id=cid).count(),
@@ -1993,6 +2004,18 @@ def archive_customer_route(user, cid):
     body = request.get_json(silent=True) or {}
     reason = (body.get("reason") or "Archived by user").strip()
     customer_deletion.archive_customer(customer, user, reason)
+    return jsonify(customer.serialize()), 200
+
+
+@api.route("/customers/<int:cid>/restore", methods=["POST"])
+@permission_required("customer.update")
+def restore_customer_route(user, cid):
+    """Bring an archived customer back into the active book."""
+    from api.engine import customer_deletion
+    customer = _get_customer_for(user, cid)
+    body = request.get_json(silent=True) or {}
+    reason = (body.get("reason") or "Restored by user").strip()
+    customer_deletion.restore_customer(customer, user, reason)
     return jsonify(customer.serialize()), 200
 
 
@@ -2043,6 +2066,18 @@ def assistant_meta(user):
         "provider": get_llm().name,
         "suggested_prompts": assistant_service.SUGGESTED_PROMPTS,
     }), 200
+
+
+@api.route("/assistant/check", methods=["POST"])
+@permission_required("workspace.view")
+def assistant_check(user):
+    """Probe the configured AI provider so credential problems are visible in
+    the UI instead of only surfacing when someone sends a message."""
+    from api.integrations.ai import get_llm, reset_llm
+    reset_llm()  # re-read the environment: the key may have just been fixed
+    provider = get_llm()
+    ok, detail = provider.check()
+    return jsonify({"provider": provider.name, "ok": ok, "detail": detail}), 200
 
 
 @api.route("/assistant/conversations", methods=["GET"])

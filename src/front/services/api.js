@@ -33,7 +33,7 @@ export const api = {
   me: () => request("/auth/me"),
 
   // customers
-  customers: () => request("/customers"),
+  customers: (archived) => request(`/customers${archived ? "?archived=1" : ""}`),
   createCustomer: (payload) => request("/customers", { method: "POST", body: payload }),
   customer: (id) => request(`/customers/${id}`),
   screen: (id) => request(`/customers/${id}/screen`, { method: "POST" }),
@@ -174,9 +174,12 @@ export const api = {
     request(`/customers/${id}`, { method: "DELETE", body: payload }),
   archiveCustomer: (id, reason) =>
     request(`/customers/${id}/archive`, { method: "POST", body: { reason } }),
+  restoreCustomer: (id, reason) =>
+    request(`/customers/${id}/restore`, { method: "POST", body: { reason } }),
 
   // Compliance Copilot (AI assistant)
   assistantMeta: () => request("/assistant/meta"),
+  assistantCheck: () => request("/assistant/check", { method: "POST" }),
   conversations: () => request("/assistant/conversations"),
   createConversation: (payload) => request("/assistant/conversations", { method: "POST", body: payload || {} }),
   conversation: (id) => request(`/assistant/conversations/${id}`),

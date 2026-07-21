@@ -32,6 +32,31 @@ else:
     app.config['SQLALCHEMY_DATABASE_URI'] = "sqlite:////tmp/test.db"
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+
+def sync_permission_catalog():
+    """Make every permission defined in code grantable, on every boot.
+
+    Only the Permission catalog is synced — role assignments are deliberately
+    left alone, so permissions an administrator granted or revoked by hand in
+    the matrix survive a deploy. (`flask sync-rbac` still resets roles to the
+    defaults when that is what you want.)
+
+    Without this, a permission added in code shows up in the admin matrix — the
+    catalog is served from code — but cannot be granted, because granting looks
+    up a Permission row that only existed after someone remembered to run a CLI
+    command. That is a deployment trap, not an authorization decision.
+    """
+    from sqlalchemy import inspect as sa_inspect
+    with app.app_context():
+        try:
+            if not sa_inspect(db.engine).has_table("permission"):
+                return  # fresh clone: `flask db upgrade` has not run yet
+            from api.rbac import sync_permissions
+            sync_permissions()
+        except Exception as exc:  # provisioning must never block startup
+            db.session.rollback()
+            print(f"[rbac] permission catalog sync skipped: {exc}")
 # render_as_batch: emit batch (table-rebuild) ALTERs so migrations generated
 # here run on SQLite too, not only PostgreSQL.
 MIGRATE = Migrate(app, db, compare_type=True, render_as_batch=True)
@@ -52,6 +77,9 @@ setup_admin(app)
 
 # add the admin
 setup_commands(app)
+
+# Keep the grantable permission catalog in step with the code.
+sync_permission_catalog()
 
 # Add all endpoints form the API with a "api" prefix
 app.register_blueprint(api, url_prefix='/api')

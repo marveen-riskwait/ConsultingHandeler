@@ -189,8 +189,8 @@ export const Customer360 = () => {
           <button className="btn btn-co" onClick={runScreening} disabled={screening}>
             <i className="fa-solid fa-magnifying-glass" /> {screening ? "Screening…" : "Run screening"}
           </button>
-          {can(store.user, "customer.delete") && (
-            <button className="btn btn-outline-danger" title="Delete this customer record"
+          {can(store.user, "customer.update") && (
+            <button className="btn btn-outline-danger" title="Remove this customer"
               onClick={() => setConfirmDelete(true)}>
               <i className="fa-solid fa-trash" />
             </button>
@@ -201,7 +201,6 @@ export const Customer360 = () => {
       {confirmDelete && (
         <DeleteCustomerModal
           customer={customer}
-          canOverride={can(store.user, "organization.update")}
           onClose={() => setConfirmDelete(false)}
           onDeleted={() => navigate("/customers")}
           onArchived={() => { setConfirmDelete(false); load(); }}

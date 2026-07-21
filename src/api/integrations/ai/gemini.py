@@ -23,6 +23,31 @@ FALLBACK_CANDIDATES = ["gemini-2.5-flash", "gemini-flash-latest",
                        "gemini-2.0-flash"]
 
 
+def _clean(value):
+    """Strip whitespace and stray surrounding quotes from an env value."""
+    v = (value or "").strip()
+    if len(v) >= 2 and v[0] == v[-1] and v[0] in ("'", '"'):
+        v = v[1:-1].strip()
+    return v
+
+
+def _auth_hint(message):
+    """Turn Google's auth errors into something actionable."""
+    if "HTTP 401" in message or "UNAUTHENTICATED" in message:
+        return (f"{message} — Google rejected the API key itself, so no model "
+                "choice can fix this. Check GEMINI_API_KEY in .env: it must be "
+                "the AI Studio API key (starts with 'AIza'), on one line, "
+                "without quotes or spaces, and still active at "
+                "https://aistudio.google.com/apikey . Restart the backend "
+                "after editing .env.")
+    if "HTTP 403" in message:
+        return (f"{message} — the key is recognised but not authorised. In "
+                "Google Cloud, enable the 'Generative Language API' for the "
+                "project that owns this key, or create a fresh key from "
+                "https://aistudio.google.com/apikey .")
+    return message
+
+
 def _rank(name):
     """Prefer newest version, flash-class (free-tier friendly), short names."""
     m = re.search(r"(\d+(?:\.\d+)?)", name)
@@ -35,13 +60,37 @@ class GeminiProvider(LLMProvider):
     available = True
 
     def __init__(self):
-        self.api_key = os.getenv("GEMINI_API_KEY")
-        self.model = os.getenv("GEMINI_MODEL")  # None -> auto-discover
+        # .env values routinely arrive with stray quotes/whitespace/newlines;
+        # a padded key is sent as an invalid credential and Google answers 401.
+        self.api_key = _clean(os.getenv("GEMINI_API_KEY"))
+        self.model = _clean(os.getenv("GEMINI_MODEL")) or None  # None -> auto
         self.max_tokens = int(os.getenv("AI_MAX_TOKENS", "3000"))
         self._resolved = None  # first model that actually answered
 
     def _headers(self):
         return {"x-goog-api-key": self.api_key}
+
+    def check(self):
+        """Ping the API with this key. Returns (ok, detail) — used by the
+        Copilot's "Test connection" so auth problems are self-diagnosable."""
+        if not self.api_key:
+            return False, ("GEMINI_API_KEY is not set in .env "
+                           "(get a free key at https://aistudio.google.com).")
+        if not self.api_key.startswith("AIza"):
+            return False, ("This does not look like a Google AI Studio API key "
+                           "(they start with 'AIza'). Check you pasted the API "
+                           "key itself, not a project id or OAuth client id.")
+        try:
+            models = self._available_models()
+        except RuntimeError as exc:
+            return False, _auth_hint(str(exc))
+        except Exception as exc:
+            return False, f"Could not reach Gemini: {exc}"
+        if not models:
+            return False, ("The key works but no chat-capable Gemini model is "
+                           "available on it.")
+        return True, (f"Key accepted · {len(models)} model(s) available · "
+                      f"will use {self._resolved or models[0]}")
 
     def _available_models(self):
         """Model names this key can call generateContent on, best first."""
@@ -94,11 +143,12 @@ class GeminiProvider(LLMProvider):
             except RuntimeError as exc:
                 text = str(exc)
                 # Retired model (404) or zero/exhausted quota (429): try the
-                # next candidate. Anything else is a real error — surface it.
+                # next candidate. Auth failures (401/403) apply to EVERY model,
+                # so retrying is pointless — explain what to fix instead.
                 if "HTTP 404" in text or "HTTP 429" in text:
                     errors.append(f"{model}: {text[:120]}")
                     continue
-                raise
+                raise RuntimeError(_auth_hint(text))
             self._resolved = model  # remember what worked
             candidates = data.get("candidates") or []
             parts = ((candidates[0].get("content") or {}).get("parts")

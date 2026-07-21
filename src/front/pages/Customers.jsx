@@ -8,15 +8,23 @@ import { DeleteCustomerModal } from "../components/DeleteCustomerModal";
 export const Customers = () => {
   const { store } = useGlobalReducer();
   const canCreate = can(store.user, "customer.create");
-  const canDelete = can(store.user, "customer.delete");
+  // Removing is archiving by default, so it follows customer.update; erasing
+  // the rows underneath is what customer.delete gates, inside the modal.
+  const canRemove = can(store.user, "customer.update");
   const [deleting, setDeleting] = useState(null);
+  const [archived, setArchived] = useState(false);
   const [customers, setCustomers] = useState([]);
   const [error, setError] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: "", customer_type: "INDIVIDUAL", country: "", business_activity: "", complex_ownership: false });
 
-  const load = () => api.customers().then(setCustomers).catch((e) => setError(e.message));
-  useEffect(() => { load(); }, []);
+  const load = () => api.customers(archived).then(setCustomers).catch((e) => setError(e.message));
+  useEffect(() => { load(); }, [archived]);
+
+  const restore = async (cu) => {
+    try { await api.restoreCustomer(cu.id, "Restored from archive"); load(); }
+    catch (e) { setError(e.message); }
+  };
 
   const create = async (e) => {
     e.preventDefault();
@@ -31,12 +39,20 @@ export const Customers = () => {
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-        <h3 style={{ margin: 0 }}>Customers</h3>
-        {canCreate && (
-          <button className="btn btn-co" onClick={() => setShowForm((s) => !s)}>
-            <i className="fa-solid fa-plus" /> New customer
+        <h3 style={{ margin: 0 }}>{archived ? "Archived customers" : "Customers"}</h3>
+        <div style={{ display: "flex", gap: ".5rem" }}>
+          <button className="btn btn-outline-secondary"
+            onClick={() => setArchived((a) => !a)}
+            title="Archived files are kept but taken out of the active book">
+            <i className="fa-solid fa-box-archive" />{" "}
+            {archived ? "Back to active" : "Archived"}
           </button>
-        )}
+          {canCreate && !archived && (
+            <button className="btn btn-co" onClick={() => setShowForm((s) => !s)}>
+              <i className="fa-solid fa-plus" /> New customer
+            </button>
+          )}
+        </div>
       </div>
 
       {error && <div className="alert alert-danger">{error}</div>}
@@ -80,7 +96,11 @@ export const Customers = () => {
       )}
 
       <div className="co-card">
-        {customers.length === 0 && <div className="empty">No customers yet.</div>}
+        {customers.length === 0 && (
+          <div className="empty">
+            {archived ? "No archived customers." : "No customers yet."}
+          </div>
+        )}
         {customers.map((cu) => (
           <div className="work-row" key={cu.id}>
             <span className={`dotsev ${cu.risk_level}`} />
@@ -95,8 +115,15 @@ export const Customers = () => {
             </div>
             <span className={`chip ${cu.risk_level}`}>{cu.risk_level} · {cu.risk_score}</span>
             <Link to={`/customers/${cu.id}`} className="btn btn-sm btn-outline-secondary">Open</Link>
-            {canDelete && (
-              <button className="btn btn-sm btn-outline-danger" title="Delete customer"
+            {canRemove && archived && (
+              <button className="btn btn-sm btn-outline-primary" title="Restore to the active book"
+                onClick={() => restore(cu)}>
+                <i className="fa-solid fa-rotate-left" /> Restore
+              </button>
+            )}
+            {canRemove && (
+              <button className="btn btn-sm btn-outline-danger"
+                title={archived ? "Delete this archived record" : "Remove customer"}
                 onClick={() => setDeleting(cu)}>
                 <i className="fa-solid fa-trash" />
               </button>
@@ -108,7 +135,6 @@ export const Customers = () => {
       {deleting && (
         <DeleteCustomerModal
           customer={deleting}
-          canOverride={can(store.user, "organization.update")}
           onClose={() => setDeleting(null)}
           onDeleted={() => { setDeleting(null); load(); }}
           onArchived={() => { setDeleting(null); load(); }}

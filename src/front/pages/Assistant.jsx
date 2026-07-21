@@ -14,7 +14,19 @@ export const Assistant = () => {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
+  const [health, setHealth] = useState(null);
+  const [checking, setChecking] = useState(false);
   const scrollRef = useRef(null);
+
+  const testConnection = async () => {
+    setChecking(true); setHealth(null); setError(null);
+    try {
+      const out = await api.assistantCheck();
+      setHealth(out);
+      setMeta((m) => ({ ...(m || {}), provider: out.provider }));
+    } catch (e) { setError(e.message); }
+    finally { setChecking(false); }
+  };
 
   const loadConversations = () => api.conversations().then(setConversations);
 
@@ -89,10 +101,22 @@ export const Assistant = () => {
                 </span>) : "…"}
           </p>
         </div>
-        <button className="btn btn-co btn-sm" onClick={() => startConversation()}>
-          <i className="fa-solid fa-plus" /> New chat
-        </button>
+        <div className="d-flex gap-2">
+          <button className="btn btn-outline-secondary btn-sm" onClick={testConnection}
+            disabled={checking} title="Check the AI provider credentials">
+            <i className="fa-solid fa-plug-circle-check" /> {checking ? "Testing…" : "Test connection"}
+          </button>
+          <button className="btn btn-co btn-sm" onClick={() => startConversation()}>
+            <i className="fa-solid fa-plus" /> New chat
+          </button>
+        </div>
       </div>
+
+      {health && (
+        <div className={`alert py-2 ${health.ok ? "alert-success" : "alert-danger"}`}>
+          <b>{health.provider}</b> — {health.detail}
+        </div>
+      )}
 
       <div className="cop-layout">
         <aside className="co-card cop-list">

@@ -16,6 +16,10 @@ class MockProvider(LLMProvider):
     name = "mock"
     available = True
 
+    def check(self):
+        return True, ("Demo mode — no AI provider configured. Set "
+                      "GEMINI_API_KEY (free) or another provider key in .env.")
+
     def complete(self, system, messages):
         last_user = next((m["content"] for m in reversed(messages)
                           if m["role"] == "user"), "")

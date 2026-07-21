@@ -3,6 +3,8 @@
 Runs against the deterministic MockProvider (no ANTHROPIC_API_KEY), so no
 network is needed.
 """
+import pytest
+
 from conftest import auth
 
 
@@ -93,6 +95,44 @@ def test_gemini_auto_discovers_and_falls_back(monkeypatch):
     # Second call goes straight to the cached working model.
     p.complete("sys", [{"role": "user", "content": "again"}])
     assert calls[-1] == "gemini-2.0-flash" and len(calls) == 3
+
+
+def test_gemini_auth_errors_are_actionable_and_not_retried(monkeypatch):
+    """401/403 apply to every model, so the adapter must stop and explain
+    rather than walking candidates (the user's real Codespace failure)."""
+    from api.integrations.ai import gemini as gm
+
+    monkeypatch.setenv("GEMINI_API_KEY", '  "AIzaPADDED"  ')  # quotes + spaces
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    p = gm.GeminiProvider()
+    assert p.api_key == "AIzaPADDED", "env padding must be stripped"
+
+    monkeypatch.setattr(gm, "get_json", lambda url, headers=None: {
+        "models": [{"name": "models/gemini-2.5-flash",
+                    "supportedGenerationMethods": ["generateContent"]}]})
+    calls = []
+
+    def unauthorised(url, payload, headers=None):
+        calls.append(url)
+        raise RuntimeError('HTTP 401: {"error": {"status": "UNAUTHENTICATED"}}')
+    monkeypatch.setattr(gm, "post_json", unauthorised)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        p.complete("sys", [{"role": "user", "content": "hi"}])
+    message = str(excinfo.value)
+    assert "rejected the API key" in message
+    assert "aistudio.google.com" in message
+    assert len(calls) == 1, "an auth failure must not be retried on other models"
+
+
+def test_assistant_check_endpoint(client, tokens):
+    """The Copilot can self-report its provider status (mock in tests)."""
+    r = client.post("/api/assistant/check",
+                    headers=auth(tokens["analyst@test.io"]))
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["provider"] == "mock" and body["ok"] is True
+    assert "Demo mode" in body["detail"]
 
 
 def test_meta_reports_mock_provider_and_prompts(client, tokens):

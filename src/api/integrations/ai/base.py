@@ -71,3 +71,14 @@ class LLMProvider:
 
     def complete(self, system, messages):  # pragma: no cover - interface
         raise NotImplementedError
+
+    def check(self):
+        """(ok, detail) — can this provider actually be reached with the
+        configured credentials? Adapters override with a cheap probe; the
+        default answers by attempting a one-word completion."""
+        try:
+            self.complete("Reply with the single word: ok.",
+                          [{"role": "user", "content": "ping"}])
+            return True, "Provider reachable and credentials accepted."
+        except Exception as exc:
+            return False, str(exc)

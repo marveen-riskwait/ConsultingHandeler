@@ -122,3 +122,12 @@ def archive_customer(customer, actor, reason):
                  old_value=old, new_value="ARCHIVED", reason=reason,
                  commit=True)
     return customer
+
+
+def restore_customer(customer, actor, reason):
+    """Undo an archive — what makes "remove from the workspace" reversible."""
+    old = customer.status
+    customer.status = "ACTIVE"
+    audit.record("CUSTOMER_RESTORED", "customer", customer.id, actor=actor,
+                 old_value=old, new_value="ACTIVE", reason=reason, commit=True)
+    return customer

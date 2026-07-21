@@ -139,3 +139,40 @@ def test_delete_permission_and_tenant_gating(client, tokens):
                          json={"confirm_name": "Protected Customer",
                                "reason": "other org"}).status_code in (403, 404)
     assert client.get(f"/api/customers/{cid}", headers=auth(to)).status_code == 200
+
+
+def test_archive_takes_the_customer_out_of_the_active_book_and_restore_returns_it(client, tokens):
+    """Removing a customer is archiving by default: it leaves the working list
+    but stays reachable and restorable — nothing is destroyed."""
+    to = tokens["officer@test.io"]
+    cid = _create(client, to, "Archived Holdings")
+
+    r = client.post(f"/api/customers/{cid}/archive", headers=auth(to),
+                    json={"reason": "created twice by mistake"})
+    assert r.status_code == 200 and r.get_json()["status"] == "ARCHIVED"
+
+    active = client.get("/api/customers", headers=auth(to)).get_json()
+    assert all(c["id"] != cid for c in active)
+    archived = client.get("/api/customers?archived=1", headers=auth(to)).get_json()
+    assert any(c["id"] == cid for c in archived)
+    # The file itself is untouched.
+    assert client.get(f"/api/customers/{cid}", headers=auth(to)).status_code == 200
+
+    assert client.post(f"/api/customers/{cid}/restore", headers=auth(to),
+                       json={"reason": "removed by mistake"}).status_code == 200
+    active = client.get("/api/customers", headers=auth(to)).get_json()
+    assert any(c["id"] == cid for c in active)
+
+
+def test_removal_check_is_open_to_editors_but_flags_who_may_erase(client, tokens):
+    """The modal opens for anyone who may edit the file; only customer.delete
+    unlocks the "delete from the database" option inside it."""
+    to = tokens["officer@test.io"]          # has customer.delete
+    analyst = tokens["analyst@test.io"]     # may edit, may not erase
+    cid = _create(client, to, "Checkable Customer")
+
+    r = client.get(f"/api/customers/{cid}/deletion-check", headers=auth(analyst))
+    assert r.status_code == 200 and r.get_json()["can_delete"] is False
+
+    r = client.get(f"/api/customers/{cid}/deletion-check", headers=auth(to))
+    assert r.status_code == 200 and r.get_json()["can_delete"] is True

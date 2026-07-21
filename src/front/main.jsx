@@ -17,9 +17,11 @@ const Main = () => {
         <React.StrictMode>  
             {/* Provide global state to all components */}
             <StoreProvider> 
-                {/* Set up routing for the application */} 
-                <RouterProvider router={router}>
-                </RouterProvider>
+                {/* Set up routing for the application. The future flag opts in
+                    to React Router v7's startTransition behavior (and silences
+                    the deprecation warning). */}
+                <RouterProvider router={router}
+                    future={{ v7_startTransition: true }} />
             </StoreProvider>
         </React.StrictMode>
     );

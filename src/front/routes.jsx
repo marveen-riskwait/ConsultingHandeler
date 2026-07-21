@@ -39,8 +39,12 @@ export const router = createBrowserRouter(
       <Route path="/management" element={<Management />} />
     </Route>
   ),
-  // Login sits outside the Layout (no navbar).
-  { basename: import.meta.env.VITE_BASENAME || "/" }
+  // Login sits outside the Layout (no navbar). The future flag opts in to
+  // v7 relative-splat-path resolution (and silences the deprecation warning).
+  {
+    basename: import.meta.env.VITE_BASENAME || "/",
+    future: { v7_relativeSplatPath: true },
+  }
 );
 
 // Note: the login route is handled inside Layout when there is no token.

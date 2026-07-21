@@ -1662,6 +1662,26 @@ def assess_regulatory_change(user, change_id):
                     "assessment": assessment.serialize()}), 200
 
 
+@api.route("/risk/country-lists", methods=["GET"])
+@permission_required("risk.view")
+def risk_country_lists(user):
+    """The official geography lists behind the score, with their age."""
+    from api.engine import country_risk
+    return jsonify(country_risk.status(
+        organization_id=user.organization_id)), 200
+
+
+@api.route("/risk/country-lists/sync", methods=["POST"])
+@permission_required("risk.approve", "organization.update")
+def risk_country_lists_sync(user):
+    from api.engine import country_risk
+    out = country_risk.sync(organization_id=user.organization_id)
+    audit.record("COUNTRY_RISK_SYNCED", "risk_methodology", None, actor=user,
+                 new_value=str(len(out.get("synced", []))),
+                 reason="Refreshed FATF/EU country lists", commit=True)
+    return jsonify(out), 200
+
+
 @api.route("/risk/methodologies", methods=["GET"])
 @permission_required("risk.view")
 def list_risk_methodologies(user):

@@ -382,7 +382,7 @@ def _seed_risk_methodology():
     """Default system risk methodology v1 — mirrors the legacy hardcoded model,
     now data-driven and editable."""
     from api.models import (RiskMethodology, RiskFactor, RiskThreshold,
-                            HIGH_RISK_COUNTRIES, HIGH_RISK_ACTIVITIES)
+                            HIGH_RISK_ACTIVITIES)
     if RiskMethodology.query.filter_by(organization_id=None, version="v1").first():
         return
     meth = RiskMethodology(organization_id=None, version="v1",
@@ -395,8 +395,9 @@ def _seed_risk_methodology():
         ("SANCTIONS", "Potential sanctions match", 40, "FLAG", {"field": "has_sanctions_match"}),
         ("ADVERSE_MEDIA", "Relevant adverse media", 20, "FLAG", {"field": "has_adverse_media"}),
         ("OWNERSHIP", "Complex ownership structure", 15, "FLAG", {"field": "complex_ownership"}),
-        ("GEOGRAPHY", "High-risk jurisdiction", 20, "COUNTRY_IN",
-         {"values": sorted(HIGH_RISK_COUNTRIES)}),
+        # Geography is not seeded here: country_risk.sync() installs the three
+        # official-list factors (FATF Call for Action / EU high-risk / FATF
+        # Increased Monitoring) so the score can be traced to a published list.
         ("BUSINESS", "High-risk business activity", 25, "ACTIVITY_IN",
          {"values": sorted(HIGH_RISK_ACTIVITIES)}),
     ]
@@ -546,6 +547,16 @@ def _seed_ownership(org):
 
 def setup_commands(app):
 
+    @app.cli.command("sync-country-risk")
+    def sync_country_risk():
+        """Refresh geography risk factors from the FATF / EU official lists."""
+        from api.engine import country_risk
+        out = country_risk.sync()
+        for row in out.get("synced", []):
+            flag = " STALE" if row["stale"] else ""
+            click.echo(f"{row['code']}: {row['countries']} countries "
+                       f"(as of {row['as_of']}{flag})")
+
     @app.cli.command("sync-rbac")
     def sync_rbac_cmd():
         """Provision the permission catalog and default system roles."""
@@ -568,7 +579,12 @@ def setup_commands(app):
                    f"{RequirementDefinition.query.count()}")
 
         _seed_risk_methodology()
-        click.echo("Risk methodology v1 seeded (6 factors + 4 thresholds).")
+        from api.engine import country_risk
+        geo = country_risk.sync(prefer_live=False,
+                                institution_countries=["Russia", "Panama"])
+        click.echo("Risk methodology v1 seeded (5 factors + 4 thresholds), "
+                   f"plus {len(geo.get('synced', []))} official geography lists "
+                   "(FATF Call for Action / EU high-risk / FATF monitoring).")
 
         _seed_workflows()
         click.echo("Workflows seeded (EDD 8-step w/ senior approval, "

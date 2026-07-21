@@ -121,6 +121,8 @@ export const api = {
   roles: () => request("/roles"),
   permissionsCatalog: () => request("/permissions"),
   riskMethodologies: () => request("/risk/methodologies"),
+  countryLists: () => request("/risk/country-lists"),
+  syncCountryLists: () => request("/risk/country-lists/sync", { method: "POST" }),
   // management
   managementDashboard: () => request("/management/dashboard"),
   managementWorkload: () => request("/management/workload"),

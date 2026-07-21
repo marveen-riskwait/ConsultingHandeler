@@ -213,3 +213,99 @@ def test_ingesting_one_source_leaves_the_others_alone(app):
     before = SanctionedEntity.query.filter_by(source="OFAC").count()
     watchlist_service.ingest("OFSI", prefer_live=False)
     assert SanctionedEntity.query.filter_by(source="OFAC").count() == before
+
+
+# --- country risk -----------------------------------------------------------
+
+def test_geography_factors_come_from_official_lists(app):
+    """Geography scoring must be traceable to a published list, not to a set
+    somebody typed into the source."""
+    from api.engine import country_risk
+    from api.models import RiskFactor
+
+    out = country_risk.sync(prefer_live=False)
+    codes = {row["code"] for row in out["synced"]}
+    # Three official lists, plus the firm's own — kept separate so an examiner
+    # can tell a regulator's list from the institution's risk appetite.
+    assert codes == {"GEO_FATF_ACTION", "GEO_EU_HIGH_RISK",
+                     "GEO_FATF_MONITORING", "GEO_INSTITUTION"}
+
+    action = RiskFactor.query.filter_by(code="GEO_FATF_ACTION").first()
+    assert action.condition_type == "COUNTRY_IN"
+    assert "Iran" in action.condition_value["values"]
+    assert "North Korea" in action.condition_value["values"]
+    # Provenance travels with the factor.
+    assert action.condition_value["as_of"]
+    assert action.condition_value["source_url"].startswith("http")
+
+    # The old hardcoded single factor is retired.
+    assert RiskFactor.query.filter_by(code="GEOGRAPHY").first() is None
+
+
+def test_country_sync_refreshes_membership_without_touching_weights(app):
+    """An officer's tuning of the impact must survive a list refresh."""
+    from api.engine import country_risk
+    from api.models import db, RiskFactor
+
+    country_risk.sync(prefer_live=False)
+    factor = RiskFactor.query.filter_by(code="GEO_FATF_ACTION").first()
+    factor.impact = 50                      # a deliberate local calibration
+    factor.condition_value = {"values": ["Nowhere"]}
+    db.session.commit()
+
+    country_risk.sync(prefer_live=False)
+    factor = RiskFactor.query.filter_by(code="GEO_FATF_ACTION").first()
+    assert factor.impact == 50, "configured weight must not be overwritten"
+    assert "Iran" in factor.condition_value["values"], "membership is refreshed"
+
+
+def test_stale_lists_are_flagged(app):
+    """FATF revises three times a year, so an old snapshot has to announce
+    itself rather than quietly scoring against last year's world."""
+    from api.integrations import countryrisk
+    from datetime import date
+
+    assert countryrisk.is_stale("2019-01-01") is True
+    assert countryrisk.is_stale(date.today().isoformat()) is False
+    assert countryrisk.is_stale("not-a-date") is True
+
+    for entry in countryrisk.all_lists(prefer_live=False).values():
+        assert "stale" in entry and entry["countries"]
+
+
+def test_a_country_on_two_lists_scores_both(app, client, tokens):
+    """Iran is on the FATF black list and the EU list: the assessment shows two
+    separate contributions, not one merged guess."""
+    from conftest import auth
+    from api.engine import country_risk
+    country_risk.sync(prefer_live=False)
+
+    to = tokens["officer@test.io"]
+    cid = client.post("/api/customers", headers=auth(to),
+                      json={"name": "Tehran Trading Co", "customer_type": "COMPANY",
+                            "country": "Iran"}).get_json()["id"]
+    d = client.get(f"/api/customers/{cid}", headers=auth(to)).get_json()
+    codes = {f.get("code") for f in d["risk"]["factors"]}
+    assert "GEO_FATF_ACTION" in codes
+    assert "GEO_EU_HIGH_RISK" in codes
+
+
+def test_the_institution_list_is_never_overwritten_by_a_sync(app):
+    """Russia is on no FATF or EU list but is a real exposure for an EU firm.
+    The firm's own countries live in their own factor, and a refresh of the
+    official lists must leave them exactly as configured."""
+    from api.engine import country_risk
+    from api.models import db, RiskFactor
+
+    country_risk.sync(prefer_live=False)
+    own = RiskFactor.query.filter_by(code=country_risk.INSTITUTION_CODE).first()
+    assert own is not None and own.condition_type == "COUNTRY_IN"
+
+    # What the compliance team actually configured.
+    own.condition_value = {"values": ["Russia", "Belarus"]}
+    db.session.commit()
+
+    # A refresh of the official lists must not touch it, whatever it is asked.
+    country_risk.sync(prefer_live=False, institution_countries=["ignored"])
+    own = RiskFactor.query.filter_by(code=country_risk.INSTITUTION_CODE).first()
+    assert own.condition_value["values"] == ["Russia", "Belarus"]

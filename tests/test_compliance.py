@@ -36,9 +36,13 @@ def test_false_positive_keeps_history_and_lowers_risk(client, tokens):
 def test_high_risk_pulls_in_edd_requirements(client, tokens):
     to = tokens["officer@test.io"]
     # A sanctions+PEP hit in a high-risk jurisdiction reaches HIGH risk, which
-    # pulls in the EDD requirements (Source of Wealth / Funds).
+    # pulls in the EDD requirements (Source of Wealth / Funds). Iran rather
+    # than Russia: geography now scores off the FATF/EU lists, and Russia is on
+    # neither (it belongs in the institution's own list, not a regulator's).
+    from api.engine import country_risk
+    country_risk.sync(prefer_live=False)
     created = client.post("/api/customers",
-                          json={"name": "Ivan Ivanov", "country": "Russia",
+                          json={"name": "Ivan Ivanov", "country": "Iran",
                                 "customer_type": "INDIVIDUAL"},
                           headers=auth(to)).get_json()
     cid = created["id"]

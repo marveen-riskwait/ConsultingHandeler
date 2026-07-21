@@ -508,14 +508,65 @@ const IntegrationsTab = ({ me }) => {
 // ------------------------------------------------------- Risk Model tab
 const RiskModelTab = () => {
   const [meths, setMeths] = useState([]);
+  const [geo, setGeo] = useState([]);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState(null);
-  useEffect(() => {
+  const load = () => {
     api.riskMethodologies().then(setMeths).catch((e) => setError(e.message));
-  }, []);
+    api.countryLists().then(setGeo).catch(() => {});
+  };
+  useEffect(load, []);
+  const syncCountries = async () => {
+    setSyncing(true); setError(null);
+    try { await api.syncCountryLists(); load(); }
+    catch (e) { setError(e.message); }
+    finally { setSyncing(false); }
+  };
   const CT = { FLAG: "flag", COUNTRY_IN: "country in list", ACTIVITY_IN: "activity in list" };
   return (
     <>
       {error && <div className="alert alert-danger py-2">{error}</div>}
+
+      <div className="co-card">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div className="section-title" style={{ marginBottom: 0 }}>
+            Official country lists
+          </div>
+          <button className="btn btn-sm btn-outline-secondary" onClick={syncCountries}
+            disabled={syncing}>
+            <i className="fa-solid fa-rotate" /> {syncing ? "Syncing…" : "Sync now"}
+          </button>
+        </div>
+        <p className="muted" style={{ fontSize: ".82rem", margin: ".4rem 0 .6rem" }}>
+          Geography scoring is traced to published lists. FATF revises three
+          times a year, so each snapshot shows its date — a stale one is flagged.
+        </p>
+        {geo.length === 0 && <div className="empty">No country lists loaded.</div>}
+        {geo.map((g) => (
+          <div className="work-row" key={g.code}>
+            <span className={`dotsev ${g.stale ? "HIGH" : "LOW"}`} />
+            <div className="grow">
+              <div className="title">
+                {g.label} <span className="muted">· +{g.impact} risk</span>
+              </div>
+              <div className="meta">
+                {g.countries.length} countries
+                {g.as_of ? ` · as of ${g.as_of}` : " · maintained by your team"}
+                {g.stale && " · OUT OF DATE — refresh from the source"}
+              </div>
+              <div className="meta" style={{ opacity: .8 }}>
+                {g.countries.slice(0, 8).join(", ")}
+                {g.countries.length > 8 ? `, +${g.countries.length - 8} more` : ""}
+              </div>
+            </div>
+            {g.source_url && (
+              <a className="btn btn-sm btn-outline-secondary" href={g.source_url}
+                target="_blank" rel="noreferrer">Source</a>
+            )}
+          </div>
+        ))}
+      </div>
+
       {meths.length === 0 && <div className="empty">No risk methodology configured.</div>}
       {meths.map((m) => (
         <div className="co-card" key={m.id}>

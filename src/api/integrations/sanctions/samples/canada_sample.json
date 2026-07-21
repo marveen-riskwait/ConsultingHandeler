@@ -1,0 +1,88 @@
+[
+ {
+  "external_id": "1, Part 2-98",
+  "name": "Russian Agricultural Bank",
+  "entity_type": "ENTITY",
+  "aliases": [
+   "АО Российский сельскохозяйственный банк",
+   "AO Россельхозбанк or AO РСХБ",
+   "RusAg",
+   "AO Rossiyskiy sel'skokhozyaystvennyy bank",
+   "AO Rossel'khozbank",
+   "AO RSHB"
+  ],
+  "programs": [
+   "Russia"
+  ],
+  "country": "Russia",
+  "remarks": "2022-02-24"
+ },
+ {
+  "external_id": "1, Part 1-1437",
+  "name": "Yelena Valeryevna VYALBE",
+  "entity_type": "INDIVIDUAL",
+  "aliases": [
+   "Elena Valerievna Vyalbe",
+   "Yelena Välbe",
+   "Yelena Valeryevna Trubitsyna",
+   "Елена Валерьевна Вяльбе",
+   "Елена Валерьевна Трубицына"
+  ],
+  "programs": [
+   "Russia"
+  ],
+  "country": "Russia",
+  "remarks": "2025-02-21"
+ },
+ {
+  "external_id": "1, Part 1-1466",
+  "name": "Vitalii Nikolayevich YERMOLAEV",
+  "entity_type": "INDIVIDUAL",
+  "aliases": [
+   "Viktor Ermolayev",
+   "Vitalii Nikolayevich Yermolaye",
+   ", Yeryoma Piterskii",
+   "Vitaliy Nikolaivich Yermolaev",
+   "Виктор Ермолаев"
+  ],
+  "programs": [
+   "Russia"
+  ],
+  "country": "Russia",
+  "remarks": "2025-03-01"
+ },
+ {
+  "external_id": "1, Part 2-152",
+  "name": "Forss Technology Ltd",
+  "entity_type": "ENTITY",
+  "aliases": [
+   "Группа компаний ФОРСС",
+   "ООО ФТ",
+   "Форсс Марин",
+   "ООО Смарт Марин",
+   "ООО Форсс Технологии"
+  ],
+  "programs": [
+   "Russia"
+  ],
+  "country": "Russia",
+  "remarks": "2022-04-08"
+ },
+ {
+  "external_id": "1, Part 2-418",
+  "name": "Beeline",
+  "entity_type": "ENTITY",
+  "aliases": [
+   "VimpelCom",
+   "Public Joint Stock Company “Vimpel-communications”",
+   "билайн",
+   "Вымпелком",
+   "Публичное Акционерное Общество \"Вымпел-Коммуникации\""
+  ],
+  "programs": [
+   "Russia"
+  ],
+  "country": "Russia",
+  "remarks": "2023-07-19"
+ }
+]

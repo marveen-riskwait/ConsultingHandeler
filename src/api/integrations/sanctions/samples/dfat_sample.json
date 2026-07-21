@@ -1,0 +1,42 @@
+[
+ {
+  "external_id": "UN-QDe.004",
+  "name": "AL-QAIDA",
+  "entity_type": "ENTITY",
+  "aliases": ["Al Qaeda", "Al Qa'ida", "The Base"],
+  "programs": ["Al-Qaida / ISIL"],
+  "remarks": "UN-listed; implemented in Australian law under the Charter of the United Nations Act."
+ },
+ {
+  "external_id": "UN-KPe.001",
+  "name": "KOREA MINING DEVELOPMENT TRADING CORPORATION",
+  "entity_type": "ENTITY",
+  "aliases": ["KOMID", "CHANGGWANG SINYONG CORPORATION"],
+  "programs": ["DPRK"],
+  "remarks": "UN-listed; implemented in Australian law under the Charter of the United Nations Act."
+ },
+ {
+  "external_id": "UN-KPe.012",
+  "name": "OCEAN MARITIME MANAGEMENT COMPANY, LIMITED",
+  "entity_type": "ENTITY",
+  "aliases": ["OMM", "OCEAN MARITIME MANAGEMENT"],
+  "programs": ["DPRK"],
+  "remarks": "UN-listed; implemented in Australian law under the Charter of the United Nations Act."
+ },
+ {
+  "external_id": "UN-TAe.001",
+  "name": "HAJI KHAIRULLAH HAJI SATTAR MONEY EXCHANGE",
+  "entity_type": "ENTITY",
+  "aliases": ["HKHS Money Exchange"],
+  "programs": ["Taliban"],
+  "remarks": "UN-listed; implemented in Australian law under the Charter of the United Nations Act."
+ },
+ {
+  "external_id": "UN-QDe.115",
+  "name": "ISLAMIC STATE IN IRAQ AND THE LEVANT - KHORASAN",
+  "entity_type": "ENTITY",
+  "aliases": ["ISIL-K", "ISIS Khorasan"],
+  "programs": ["Al-Qaida / ISIL"],
+  "remarks": "UN-listed; implemented in Australian law under the Charter of the United Nations Act."
+ }
+]

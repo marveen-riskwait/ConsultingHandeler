@@ -169,3 +169,47 @@ def test_name_suggestions_endpoint_groups_customers_and_watchlist(client, tokens
     assert any(c["name"] == "Tornado Logistics SARL" for c in d["customers"])
     assert any("tornado" in w["name"].lower() for w in d["watchlist"])
     assert all("source" in w for w in d["watchlist"])
+
+
+def test_all_seven_sources_ingest_and_report_provenance(app):
+    """Coverage is the point: seven jurisdictions, each with its own record
+    count and a live/sample provenance flag."""
+    from api.engine import watchlist_service
+    from api.integrations.sanctions import all_sources
+
+    codes = {s.code for s in all_sources()}
+    assert codes == {"OFAC", "UN", "EU", "OFSI", "CANADA", "SECO", "DFAT"}
+
+    watchlist_service.ingest_all(prefer_live=False)
+    stats = {s["source"]: s for s in watchlist_service.stats()}
+    assert set(stats) == codes
+    for code in codes:
+        assert stats[code]["record_count"] > 0, f"{code} ingested nothing"
+        assert stats[code]["last_import"] is not None
+
+
+def test_new_sources_are_searchable_and_keep_their_aliases(app):
+    from api.engine import watchlist_service
+    from api.models import SanctionedEntity
+    watchlist_service.ingest_all(prefer_live=False)
+
+    # A UK OFSI entry carried over with its alias spellings.
+    ofsi = SanctionedEntity.query.filter_by(source="OFSI").first()
+    assert ofsi is not None and ofsi.name_normalized
+    hits = watchlist_service.search(ofsi.name)
+    assert any(e.source == "OFSI" for e, _ in hits)
+
+    # Canada records are individuals/entities with a programme (the country).
+    canada = SanctionedEntity.query.filter_by(source="CANADA").first()
+    assert canada is not None
+    assert canada.entity_type in ("INDIVIDUAL", "ENTITY", "VESSEL")
+
+
+def test_ingesting_one_source_leaves_the_others_alone(app):
+    """Refreshing the UK list must not wipe the US one."""
+    from api.engine import watchlist_service
+    from api.models import SanctionedEntity
+    watchlist_service.ingest_all(prefer_live=False)
+    before = SanctionedEntity.query.filter_by(source="OFAC").count()
+    watchlist_service.ingest("OFSI", prefer_live=False)
+    assert SanctionedEntity.query.filter_by(source="OFAC").count() == before

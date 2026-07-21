@@ -66,6 +66,9 @@ export const Chat = () => {
   const [call, setCall] = useState(null);          // {roomId, media, joined}
   const [incoming, setIncoming] = useState(null);  // {room_id, from_name, media}
   const [remoteStreams, setRemoteStreams] = useState({}); // uid -> MediaStream
+  const [micOn, setMicOn] = useState(true);
+  const [camOn, setCamOn] = useState(true);
+  const [hasMedia, setHasMedia] = useState(false); // false = viewer mode
   const localStreamRef = useRef(null);
   const localVideoRef = useRef(null);
   const peersRef = useRef({});
@@ -118,9 +121,15 @@ export const Chat = () => {
         audio: true, video: media === "video" });
       localStreamRef.current = stream;
       if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+      setHasMedia(true);
+      setMicOn(true);
+      setCamOn(media === "video");
       return stream;
     } catch (e) {
       setError("No camera/microphone available — joining as viewer.");
+      setHasMedia(false);
+      setMicOn(false);
+      setCamOn(false);
       return null;
     }
   };
@@ -150,12 +159,27 @@ export const Chat = () => {
     localStreamRef.current = null;
     setRemoteStreams({});
     setCall(null);
+    setHasMedia(false);
+    setMicOn(true);
+    setCamOn(true);
   }, []);
 
-  const toggleTrack = (kind) => {
-    (localStreamRef.current?.getTracks() || [])
-      .filter((t) => t.kind === kind)
-      .forEach((t) => { t.enabled = !t.enabled; });
+  // Mute / camera-off: flip the outgoing track AND the button state together,
+  // so the UI always reflects what peers actually receive.
+  const toggleMic = () => {
+    const tracks = (localStreamRef.current?.getAudioTracks() || []);
+    if (!tracks.length) return;
+    const next = !micOn;
+    tracks.forEach((t) => { t.enabled = next; });
+    setMicOn(next);
+  };
+
+  const toggleCam = () => {
+    const tracks = (localStreamRef.current?.getVideoTracks() || []);
+    if (!tracks.length) return;
+    const next = !camOn;
+    tracks.forEach((t) => { t.enabled = next; });
+    setCamOn(next);
   };
 
   // -------------------------------------------------------- socket lifecycle
@@ -165,7 +189,8 @@ export const Chat = () => {
 
     const onMessage = (m) => {
       if (m.room_id === activeIdRef.current) {
-        setMessages((ms) => [...ms, m]);
+        // Dedupe: our own sends are appended from the REST response too.
+        setMessages((ms) => (ms.some((x) => x.id === m.id) ? ms : [...ms, m]));
         api.markChatRead(m.room_id).catch(() => {});
       }
       loadRooms();
@@ -251,11 +276,24 @@ export const Chat = () => {
   useEffect(() => () => hangup(), [hangup]); // leave call on unmount
 
   // ------------------------------------------------------------------ actions
+  // Messages go over REST (guaranteed even when the WebSocket is degraded —
+  // e.g. Codespace port-forwarding, or during heavy call signalling); the
+  // backend broadcasts to everyone's sockets, and we append our own copy from
+  // the response immediately (deduped when the echo arrives).
+  const deliver = async (payload) => {
+    setError(null);
+    try {
+      const m = await api.sendChatMessage(activeIdRef.current, payload);
+      setMessages((ms) => (ms.some((x) => x.id === m.id) ? ms : [...ms, m]));
+      loadRooms();
+    } catch (e) { setError(e.message); }
+  };
+
   const send = () => {
     const body = draft.trim();
     if (!body || !activeId) return;
-    getSocket()?.emit("chat:send", { room_id: activeId, body });
     setDraft("");
+    deliver({ body });
   };
 
   const attach = async (file) => {
@@ -263,9 +301,8 @@ export const Chat = () => {
     setError(null);
     try {
       const stored = await api.uploadChatMedia(file);
-      getSocket()?.emit("chat:send", {
-        room_id: activeId, kind: stored.kind, media_url: stored.url,
-        media_type: stored.media_type,
+      await deliver({
+        kind: stored.kind, media_url: stored.url, media_type: stored.media_type,
         body: stored.kind === "FILE" ? file.name : null,
       });
     } catch (e) { setError(e.message); }
@@ -456,7 +493,13 @@ export const Chat = () => {
                   <div className="ch-call-grid">
                     <div className="ch-tile">
                       <video ref={localVideoRef} autoPlay muted playsInline />
-                      <span className="ch-tile-name">You</span>
+                      <span className="ch-tile-name">
+                        You{!micOn && hasMedia ? " · muted" : ""}
+                        {hasMedia ? "" : " · viewer"}
+                      </span>
+                      {hasMedia && !camOn && (
+                        <span className="ch-tile-off"><i className="fa-solid fa-video-slash" /></span>
+                      )}
                     </div>
                     {Object.entries(remoteStreams).map(([uid, stream]) => (
                       <RemoteTile key={uid} stream={stream}
@@ -464,13 +507,22 @@ export const Chat = () => {
                     ))}
                   </div>
                   <div className="ch-call-controls">
-                    <button className="btn btn-sm btn-outline-light" title="Toggle microphone"
-                      onClick={() => toggleTrack("audio")}>
-                      <i className="fa-solid fa-microphone" />
+                    <button
+                      className={`btn btn-sm ${micOn ? "btn-outline-light" : "btn-danger"}`}
+                      title={hasMedia ? (micOn ? "Mute microphone" : "Unmute microphone")
+                        : "No microphone (viewer mode)"}
+                      disabled={!hasMedia} onClick={toggleMic}>
+                      <i className={`fa-solid ${micOn ? "fa-microphone" : "fa-microphone-slash"}`} />
+                      {!micOn && " Muted"}
                     </button>
-                    <button className="btn btn-sm btn-outline-light" title="Toggle camera"
-                      onClick={() => toggleTrack("video")}>
-                      <i className="fa-solid fa-video" />
+                    <button
+                      className={`btn btn-sm ${camOn ? "btn-outline-light" : "btn-danger"}`}
+                      title={call.media !== "video" ? "Audio call (no camera)"
+                        : hasMedia ? (camOn ? "Turn camera off" : "Turn camera on")
+                          : "No camera (viewer mode)"}
+                      disabled={!hasMedia || call.media !== "video"} onClick={toggleCam}>
+                      <i className={`fa-solid ${camOn ? "fa-video" : "fa-video-slash"}`} />
+                      {!camOn && call.media === "video" && hasMedia && " Off"}
                     </button>
                     <button className="btn btn-sm btn-danger" onClick={() => hangup()}>
                       <i className="fa-solid fa-phone-slash" /> Leave

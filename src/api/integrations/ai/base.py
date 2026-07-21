@@ -16,6 +16,22 @@ def _ssl_context():
         return ssl.create_default_context()
 
 
+def get_json(url, headers=None):
+    """GET JSON with the same error shape as post_json."""
+    req = urllib.request.Request(url, headers=headers or {})
+    try:
+        with urllib.request.urlopen(req, timeout=_TIMEOUT,
+                                    context=_ssl_context()) as r:
+            return json.loads(r.read().decode())
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            detail = exc.read().decode()[:300]
+        except Exception:
+            pass
+        raise RuntimeError(f"HTTP {exc.code}: {detail or exc.reason}")
+
+
 def post_json(url, payload, headers=None):
     """POST JSON, return parsed JSON. Raises RuntimeError with the provider's
     error body on HTTP failure so the route can surface a readable message."""

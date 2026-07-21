@@ -55,6 +55,46 @@ def test_provider_resolution_from_env(monkeypatch):
         ai.reset_llm()  # leave the cached provider clean for other tests
 
 
+def test_gemini_auto_discovers_and_falls_back(monkeypatch):
+    """Gemini adapter: lists the key's models, walks candidates on 404/429,
+    caches the first one that answers (Google model-churn resilience)."""
+    from api.integrations.ai import gemini as gm
+
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy")
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+
+    monkeypatch.setattr(gm, "get_json", lambda url, headers=None: {
+        "models": [
+            {"name": "models/gemini-2.5-flash",
+             "supportedGenerationMethods": ["generateContent"]},
+            {"name": "models/gemini-2.0-flash",
+             "supportedGenerationMethods": ["generateContent"]},
+            {"name": "models/gemini-embedding-001",
+             "supportedGenerationMethods": ["embedContent"]},
+        ]})
+
+    calls = []
+    def fake_post(url, payload, headers=None):
+        model = url.split("/")[-1].split(":")[0]
+        calls.append(model)
+        if model == "gemini-2.5-flash":
+            raise RuntimeError('HTTP 429: {"error": {"code": 429}}')
+        return {"candidates": [{"content": {"parts": [{"text": "ok!"}]}}],
+                "usageMetadata": {"promptTokenCount": 5,
+                                  "candidatesTokenCount": 2}}
+    monkeypatch.setattr(gm, "post_json", fake_post)
+
+    p = gm.GeminiProvider()
+    result = p.complete("sys", [{"role": "user", "content": "hi"}])
+    assert result.text == "ok!" and result.model == "gemini-2.0-flash"
+    # 2.5 got the 429, 2.0 answered; the embedding model was never considered.
+    assert calls == ["gemini-2.5-flash", "gemini-2.0-flash"]
+
+    # Second call goes straight to the cached working model.
+    p.complete("sys", [{"role": "user", "content": "again"}])
+    assert calls[-1] == "gemini-2.0-flash" and len(calls) == 3
+
+
 def test_meta_reports_mock_provider_and_prompts(client, tokens):
     t = tokens["analyst@test.io"]
     r = client.get("/api/assistant/meta", headers=auth(t))

@@ -261,22 +261,72 @@ def screen_customer(user, cid):
 @api.route("/customers/<int:cid>/documents", methods=["POST"])
 @permission_required("document.upload")
 def add_document(user, cid):
+    """Attach a document to the file.
+
+    Accepts multipart/form-data with a `file` part — the real case, a scan or
+    a PDF — and keeps the JSON form (doc_type only) for declaring that a
+    document is expected before it arrives. Only an upload with a file counts
+    as evidence for the requirement engine.
+    """
+    from api.integrations import media
+
     customer = _get_customer_for(user, cid)
+    upload = request.files.get("file")
     body = request.get_json(silent=True) or {}
-    doc_type = body.get("doc_type")
+    source = request.form if upload is not None else body
+    doc_type = (source.get("doc_type") or "").strip()
     if not doc_type:
         raise APIException("doc_type is required", status_code=400)
-    expiry = body.get("expiry_days")
+    expiry = source.get("expiry_days")
+
     doc = Document(
         customer_id=customer.id,
         doc_type=doc_type,
-        status=body.get("status", "PENDING"),
+        status=source.get("status", "PENDING"),
         expiry_date=utcnow() + timedelta(days=int(expiry)) if expiry else None,
+        uploaded_by_id=user.id,
     )
+    if upload is not None and upload.filename:
+        stored = media.store(upload)
+        doc.file_url = stored["url"]
+        doc.file_name = upload.filename[:255]
+        doc.media_type = stored["media_type"]
+        # Size after storing: the stream is at EOF, which is what we want.
+        try:
+            doc.file_size = upload.stream.tell() or None
+        except Exception:
+            doc.file_size = None
+
     db.session.add(doc)
     audit.record("DOCUMENT_ADDED", "document", None, actor=user,
-                 new_value=doc_type, reason="Upload", commit=True)
+                 new_value=f"{doc_type} · {doc.file_name}" if doc.file_name else doc_type,
+                 reason="Upload" if doc.file_url else "Declared as expected",
+                 commit=True)
+    # A newly received document can satisfy an outstanding requirement.
+    if doc.file_url:
+        from api.engine import requirement_engine
+        requirement_engine.evaluate(customer)
+        db.session.commit()
     return jsonify(doc.serialize()), 201
+
+
+@api.route("/customers/<int:cid>/documents/<int:did>", methods=["DELETE"])
+@permission_required("document.upload")
+def delete_document(user, cid, did):
+    """Remove a document sent by mistake (wrong file, wrong customer)."""
+    customer = _get_customer_for(user, cid)
+    doc = Document.query.filter_by(id=did, customer_id=customer.id).first()
+    if doc is None:
+        raise APIException("Document not found", status_code=404)
+    audit.record("DOCUMENT_REMOVED", "document", doc.id, actor=user,
+                 old_value=f"{doc.doc_type} · {doc.file_name or 'no file'}",
+                 reason="Removed by user")
+    db.session.delete(doc)
+    db.session.commit()
+    from api.engine import requirement_engine
+    requirement_engine.evaluate(customer)
+    db.session.commit()
+    return jsonify({"deleted": True}), 200
 
 
 @api.route("/customers/<int:cid>/timeline", methods=["GET"])

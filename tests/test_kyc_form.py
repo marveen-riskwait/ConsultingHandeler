@@ -10,6 +10,14 @@ def _cid(client, token, name):
     return next(c["id"] for c in r.get_json() if c["name"] == name)
 
 
+def _fresh(client, token, name):
+    """A customer of its own. The seeded ones are shared by the whole module,
+    so document state from an earlier test would leak into the next."""
+    return client.post("/api/customers", headers=auth(token),
+                       json={"name": name, "customer_type": "INDIVIDUAL",
+                             "country": "Luxembourg"}).get_json()["id"]
+
+
 def test_schema_differs_by_customer_type(client, tokens):
     t = tokens["analyst@test.io"]
     ind = client.get("/api/kyc-form/schema?customer_type=INDIVIDUAL",
@@ -63,17 +71,74 @@ def test_save_form_fills_profile_fields_and_completeness(client, tokens):
     assert r2.get_json()["saved"] == 0
 
 
+def _upload(client, token, cid, doc_type, filename="scan.pdf",
+            content=b"%PDF-1.4 fake scan", mimetype="application/pdf"):
+    import io
+    return client.post(
+        f"/api/customers/{cid}/documents", headers=auth(token),
+        data={"doc_type": doc_type,
+              "file": (io.BytesIO(content), filename, mimetype)},
+        content_type="multipart/form-data")
+
+
 def test_proof_documents_advance_requirements(client, tokens):
     t = tokens["analyst@test.io"]
     cid = _cid(client, t, "Marie Dupont")
-    client.post(f"/api/customers/{cid}/documents", headers=auth(t),
-                json={"doc_type": "PASSPORT"})
-    client.post(f"/api/customers/{cid}/documents", headers=auth(t),
-                json={"doc_type": "PROOF_OF_ADDRESS"})
+    assert _upload(client, t, cid, "PASSPORT").status_code == 201
+    assert _upload(client, t, cid, "PROOF_OF_ADDRESS",
+                   filename="utility-bill.pdf").status_code == 201
     form = client.get(f"/api/customers/{cid}/kyc-form", headers=auth(t)).get_json()
     by_code = {r["code"]: r["status"] for r in form["completeness"]["requirements"]}
     assert by_code["IDENTITY_DOCUMENT"] in ("RECEIVED", "VERIFIED")
     assert by_code["PROOF_OF_ADDRESS"] in ("RECEIVED", "VERIFIED")
+
+
+def test_uploaded_file_is_stored_and_readable_back(client, tokens):
+    """The point of the feature: a real scan arrives, is served back, and the
+    file itself is what the reviewer opens."""
+    t = tokens["analyst@test.io"]
+    cid = _fresh(client, t, "Scan Sender")
+    r = _upload(client, t, cid, "PASSPORT", filename="passport-scan.pdf",
+                content=b"%PDF-1.4 passport bytes")
+    doc = r.get_json()
+    assert doc["has_file"] is True
+    assert doc["file_name"] == "passport-scan.pdf"
+    assert doc["media_type"] == "application/pdf"
+    assert doc["file_size"] == len(b"%PDF-1.4 passport bytes")
+
+    served = client.get(doc["file_url"])
+    assert served.status_code == 200
+    assert b"passport bytes" in served.data
+
+
+def test_a_document_without_a_file_does_not_satisfy_a_requirement(client, tokens):
+    """The reported bug: "Document recorded" with nothing received used to move
+    the completeness bar. Declaring an expected document is still allowed, but
+    it stays MISSING until the file actually arrives."""
+    t = tokens["analyst@test.io"]
+    cid = _fresh(client, t, "Awaiting Documents")
+    client.post(f"/api/customers/{cid}/documents", headers=auth(t),
+                json={"doc_type": "PASSPORT"})
+    form = client.get(f"/api/customers/{cid}/kyc-form", headers=auth(t)).get_json()
+    by_code = {r["code"]: r["status"] for r in form["completeness"]["requirements"]}
+    assert by_code["IDENTITY_DOCUMENT"] == "MISSING"
+
+    _upload(client, t, cid, "PASSPORT")
+    form = client.get(f"/api/customers/{cid}/kyc-form", headers=auth(t)).get_json()
+    by_code = {r["code"]: r["status"] for r in form["completeness"]["requirements"]}
+    assert by_code["IDENTITY_DOCUMENT"] in ("RECEIVED", "VERIFIED")
+
+
+def test_document_can_be_removed_and_the_requirement_reopens(client, tokens):
+    t = tokens["analyst@test.io"]
+    cid = _fresh(client, t, "Sent By Mistake")
+    doc = _upload(client, t, cid, "PASSPORT").get_json()
+
+    assert client.delete(f"/api/customers/{cid}/documents/{doc['id']}",
+                         headers=auth(t)).status_code == 200
+    form = client.get(f"/api/customers/{cid}/kyc-form", headers=auth(t)).get_json()
+    by_code = {r["code"]: r["status"] for r in form["completeness"]["requirements"]}
+    assert by_code["IDENTITY_DOCUMENT"] == "MISSING"
 
 
 def test_submit_creates_review_task(client, tokens):

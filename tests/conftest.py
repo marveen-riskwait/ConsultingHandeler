@@ -13,8 +13,19 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 os.environ.pop("CELERY_BROKER_URL", None)
 os.environ.pop("REDIS_URL", None)
-os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
+# Forced, not setdefault: `pipenv run pytest` loads .env, so a developer whose
+# DATABASE_URL points at a real Postgres would otherwise have the suite try to
+# connect to it (and drop_all it). Flask-SQLAlchemy binds the engine at
+# init_app, before any fixture can override the config — so it has to be right
+# here, at import time.
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
+
+# Same reason: a developer's real AI keys in .env would make the Copilot tests
+# talk to Gemini/Claude instead of the deterministic mock, and fail offline.
+for _key in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY",
+             "OPENAI_API_KEY", "OPENAI_BASE_URL", "AI_PROVIDER"):
+    os.environ.pop(_key, None)
 
 
 @pytest.fixture(scope="module")

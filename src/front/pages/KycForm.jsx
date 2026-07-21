@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../services/api";
+import { FilePreview } from "../components/FilePreview";
+
+const fileSize = (bytes) => {
+  if (!bytes) return "—";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
 
 // The full CDD questionnaire. Sections come from the backend schema (per
 // customer type + risk rank — EDD sections appear automatically at HIGH+).
@@ -67,6 +75,8 @@ export const KycForm = () => {
   const [dirty, setDirty] = useState({});
   const [active, setActive] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(null);
+  const [preview, setPreview] = useState(null);
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
 
@@ -109,12 +119,23 @@ export const KycForm = () => {
     finally { setBusy(false); }
   };
 
-  const addProof = async (docType) => {
+  const uploadProof = async (docType, file) => {
+    if (!file) return;
+    setUploading(docType); setError(null);
+    try {
+      await api.uploadDocument(id, docType, file);
+      await load();
+      setNotice(`${file.name} uploaded.`);
+    } catch (e) { setError(e.message); }
+    finally { setUploading(null); }
+  };
+
+  const removeProof = async (doc) => {
     setBusy(true); setError(null);
     try {
-      await api.addDocument(id, { doc_type: docType });
+      await api.deleteDocument(id, doc.id);
       await load();
-      setNotice("Document recorded.");
+      setNotice("Document removed.");
     } catch (e) { setError(e.message); }
     finally { setBusy(false); }
   };
@@ -213,22 +234,45 @@ export const KycForm = () => {
               </p>
               {proofs.map((p) => {
                 const existing = docsFor(p.doc_type);
+                const received = existing.filter((d) => d.file_url);
                 return (
                   <div className="work-row" key={p.doc_type}>
-                    <span className={`dotsev ${existing.length ? "LOW" : "HIGH"}`} />
+                    <span className={`dotsev ${received.length ? "LOW" : "HIGH"}`} />
                     <div className="grow">
                       <div className="title">{p.label}</div>
                       <div className="meta">{p.examples}</div>
                       {existing.map((d) => (
-                        <div className="meta" key={d.id}>
-                          <i className="fa-solid fa-file" /> recorded — {d.status}
+                        <div className="meta kf-doc" key={d.id}>
+                          {d.file_url ? (
+                            <>
+                              <button type="button" className="kf-doc-link"
+                                onClick={() => setPreview(d)}>
+                                <i className="fa-solid fa-file-lines" /> {d.file_name}
+                              </button>
+                              <span> · {fileSize(d.file_size)} · {d.status}</span>
+                            </>
+                          ) : (
+                            <><i className="fa-regular fa-hourglass" /> awaiting file — {d.status}</>
+                          )}
+                          <button type="button" className="kf-doc-remove"
+                            title="Remove this document" onClick={() => removeProof(d)}>
+                            <i className="fa-solid fa-xmark" />
+                          </button>
                         </div>
                       ))}
                     </div>
-                    <button className="btn btn-sm btn-outline-secondary"
-                      onClick={() => addProof(p.doc_type)} disabled={busy}>
-                      <i className="fa-solid fa-plus" /> Record
-                    </button>
+                    <label className={"btn btn-sm btn-outline-secondary" +
+                      (uploading === p.doc_type ? " disabled" : "")}>
+                      <i className="fa-solid fa-arrow-up-from-bracket" />{" "}
+                      {uploading === p.doc_type ? "Uploading…" : "Upload"}
+                      <input type="file" hidden
+                        accept=".pdf,.png,.jpg,.jpeg,.heic,.webp,.tif,.tiff"
+                        disabled={uploading === p.doc_type}
+                        onChange={(e) => {
+                          uploadProof(p.doc_type, e.target.files?.[0]);
+                          e.target.value = "";   // same file twice must re-fire
+                        }} />
+                    </label>
                   </div>
                 );
               })}
@@ -236,6 +280,11 @@ export const KycForm = () => {
           )}
         </section>
       </div>
+
+      {preview && (
+        <FilePreview url={preview.file_url} mediaType={preview.media_type}
+          name={preview.file_name} onClose={() => setPreview(null)} />
+      )}
     </>
   );
 };

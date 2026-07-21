@@ -453,7 +453,7 @@ h1, h2, h3, h4, .co-serif {
   cursor: pointer; transition: background .12s ease, color .12s ease;
 }
 .row-menu-trigger:hover, .row-menu-trigger[aria-expanded="true"] {
-  background: var(--co-surface-alt, #eef1f6); color: var(--co-ink, #0f172a);
+  background: #eef1f6; color: var(--co-ink);
 }
 .row-menu-pop {
   position: absolute; right: 0; top: calc(100% + 6px); z-index: 40;
@@ -464,8 +464,21 @@ h1, h2, h3, h4, .co-serif {
 .row-menu-item {
   display: flex; align-items: center; gap: .5rem; width: 100%;
   padding: .45rem .6rem; border: 0; border-radius: 7px; background: transparent;
-  font-size: .84rem; text-align: left; color: var(--co-ink, #0f172a); cursor: pointer;
+  font-size: .84rem; text-align: left; color: var(--co-ink); cursor: pointer;
 }
-.row-menu-item:hover { background: var(--co-surface-alt, #eef1f6); }
+.row-menu-item:hover { background: #eef1f6; }
 .row-menu-item.danger { color: var(--sev-critical); }
 .row-menu-item.danger:hover { background: #fde7e7; }
+
+/* KYC proof rows: the uploaded file is a link into the in-app preview, not a
+   download-only dead end. */
+.kf-doc { display: flex; align-items: center; gap: .35rem; }
+.kf-doc-link {
+  border: 0; background: transparent; padding: 0; color: var(--co-primary);
+  font: inherit; cursor: pointer; text-decoration: underline;
+}
+.kf-doc-remove {
+  border: 0; background: transparent; color: var(--co-muted); cursor: pointer;
+  padding: 0 .2rem; line-height: 1;
+}
+.kf-doc-remove:hover { color: var(--sev-critical); }

@@ -38,6 +38,22 @@ export const api = {
   customer: (id) => request(`/customers/${id}`),
   screen: (id) => request(`/customers/${id}/screen`, { method: "POST" }),
   addDocument: (id, payload) => request(`/customers/${id}/documents`, { method: "POST", body: payload }),
+  uploadDocument: async (id, docType, file) => {
+    const token = localStorage.getItem("token");
+    const form = new FormData();
+    form.append("file", file);
+    form.append("doc_type", docType);
+    const res = await fetch(`${BASE}/api/customers/${id}/documents`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || `Upload failed (${res.status})`);
+    return data;
+  },
+  deleteDocument: (id, docId) =>
+    request(`/customers/${id}/documents/${docId}`, { method: "DELETE" }),
   timeline: (id) => request(`/customers/${id}/timeline`),
   ownership: (id) => request(`/customers/${id}/ownership`),
   addOwnership: (id, payload) => request(`/customers/${id}/ownership`, { method: "POST", body: payload }),

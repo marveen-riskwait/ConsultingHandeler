@@ -46,12 +46,16 @@ def _status_for(customer, d):
         if f is None or f.value in (None, ""):
             return "MISSING"
         return "VERIFIED" if f.verified else "RECEIVED"
-    # DOCUMENT
-    doc = (Document.query
-           .filter_by(customer_id=customer.id, doc_type=d.doc_type).first())
-    if doc is None:
+    # DOCUMENT — a row without a file is a document we are still waiting for,
+    # not evidence. Counting it would inflate completeness against nothing.
+    docs = (Document.query
+            .filter_by(customer_id=customer.id, doc_type=d.doc_type).all())
+    with_file = [doc for doc in docs if doc.file_url]
+    if not with_file:
         return "MISSING"
-    return "VERIFIED" if doc.status == "VERIFIED" else "RECEIVED"
+    if any(doc.status == "VERIFIED" for doc in with_file):
+        return "VERIFIED"
+    return "RECEIVED"
 
 
 def evaluate(customer):

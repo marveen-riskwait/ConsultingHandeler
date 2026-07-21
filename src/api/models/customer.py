@@ -103,6 +103,16 @@ class Document(db.Model):
     expiry_date: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
+    # The evidence itself. Nullable because a row may be created to declare
+    # that a document is expected before the customer sends it — but a
+    # requirement only counts as received once file_url is set.
+    file_url: Mapped[str] = mapped_column(String(500), nullable=True)
+    file_name: Mapped[str] = mapped_column(String(255), nullable=True)
+    media_type: Mapped[str] = mapped_column(String(120), nullable=True)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=True)
+    uploaded_by_id: Mapped[int] = mapped_column(
+        ForeignKey("user.id"), nullable=True)
+
     def serialize(self):
         return {
             "id": self.id,
@@ -110,6 +120,12 @@ class Document(db.Model):
             "doc_type": self.doc_type,
             "status": self.status,
             "expiry_date": self.expiry_date.isoformat() if self.expiry_date else None,
+            "file_url": self.file_url,
+            "file_name": self.file_name,
+            "media_type": self.media_type,
+            "file_size": self.file_size,
+            "has_file": bool(self.file_url),
+            "uploaded_at": self.created_at.isoformat() if self.created_at else None,
         }
 
 

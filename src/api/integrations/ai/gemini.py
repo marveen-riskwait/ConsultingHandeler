@@ -12,7 +12,9 @@ import os
 from api.integrations.ai.base import LLMProvider, LLMResult, post_json
 
 API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
-DEFAULT_MODEL = "gemini-2.0-flash"
+# 2.5-flash carries the free-tier quota; 2.0-flash keys now often 429 with
+# "limit: 0". gemini-2.5-flash-lite is the higher-quota fallback.
+DEFAULT_MODEL = "gemini-2.5-flash"
 
 
 class GeminiProvider(LLMProvider):
@@ -39,8 +41,18 @@ class GeminiProvider(LLMProvider):
             "contents": contents,
             "generationConfig": {"maxOutputTokens": self.max_tokens},
         }
-        data = post_json(f"{API_BASE}/{self.model}:generateContent",
-                         payload, headers={"x-goog-api-key": self.api_key})
+        try:
+            data = post_json(f"{API_BASE}/{self.model}:generateContent",
+                             payload, headers={"x-goog-api-key": self.api_key})
+        except RuntimeError as exc:
+            if "429" in str(exc):
+                raise RuntimeError(
+                    f"{exc} — Gemini free-tier quota for model "
+                    f"'{self.model}' is exhausted or zero. Try "
+                    "GEMINI_MODEL=gemini-2.5-flash-lite in .env (higher free "
+                    "quota), wait a minute, or check "
+                    "https://aistudio.google.com/ usage.")
+            raise
 
         candidates = data.get("candidates") or []
         parts = ((candidates[0].get("content") or {}).get("parts")

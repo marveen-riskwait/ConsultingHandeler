@@ -27,23 +27,33 @@ from api.integrations.ai.mock import MockProvider
 _PROVIDER = None
 
 
+def _try(cls):
+    """Instantiate a provider, or None if it can't initialize (e.g. its SDK
+    isn't installed). A broken provider must never take the Copilot down."""
+    try:
+        return cls()
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning(
+            "AI provider %s unavailable (%s) — falling back", cls.__name__, exc)
+        return None
+
+
 def _resolve():
     choice = (os.getenv("AI_PROVIDER") or "").strip().lower()
-    if choice == "claude":
-        return ClaudeProvider()
-    if choice == "gemini":
-        return GeminiProvider()
-    if choice == "openai":
-        return OpenAICompatProvider()
-    if choice == "mock":
-        return MockProvider()
-    # No explicit choice: pick by available credential.
-    if os.getenv("ANTHROPIC_API_KEY"):
-        return ClaudeProvider()
-    if os.getenv("GEMINI_API_KEY"):
-        return GeminiProvider()
-    if os.getenv("OPENAI_API_KEY"):
-        return OpenAICompatProvider()
+    explicit = {"claude": ClaudeProvider, "gemini": GeminiProvider,
+                "openai": OpenAICompatProvider, "mock": MockProvider}.get(choice)
+    if explicit is not None:
+        return _try(explicit) or MockProvider()
+    # No explicit choice: pick by available credential, skipping any provider
+    # that fails to construct.
+    for cls, key in ((ClaudeProvider, "ANTHROPIC_API_KEY"),
+                     (GeminiProvider, "GEMINI_API_KEY"),
+                     (OpenAICompatProvider, "OPENAI_API_KEY")):
+        if os.getenv(key):
+            provider = _try(cls)
+            if provider is not None:
+                return provider
     return MockProvider()
 
 

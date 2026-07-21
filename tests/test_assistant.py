@@ -37,6 +37,20 @@ def test_provider_resolution_from_env(monkeypatch):
         monkeypatch.setenv("AI_PROVIDER", "mock")
         ai.reset_llm()
         assert ai.get_llm().name == "mock"
+
+        # A provider that can't initialize (SDK missing, bad env) must fall
+        # back instead of 500ing the Copilot (the Codespace anthropic bug).
+        class Broken:
+            def __init__(self):
+                raise ModuleNotFoundError("No module named 'anthropic'")
+        monkeypatch.setattr(ai, "ClaudeProvider", Broken)
+        monkeypatch.setenv("AI_PROVIDER", "claude")
+        ai.reset_llm()
+        assert ai.get_llm().name == "mock"     # explicit-but-broken -> mock
+        monkeypatch.delenv("AI_PROVIDER")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "dummy")  # auto: skip broken…
+        ai.reset_llm()
+        assert ai.get_llm().name == "gemini"   # …and use the next available
     finally:
         ai.reset_llm()  # leave the cached provider clean for other tests
 

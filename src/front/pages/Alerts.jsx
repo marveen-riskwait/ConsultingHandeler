@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import useGlobalReducer from "../hooks/useGlobalReducer";
 import { api } from "../services/api";
 import { can } from "../permissions/can";
+import { AlertDetails } from "../components/AlertDetails";
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : "—");
 
@@ -14,6 +15,7 @@ export const Alerts = () => {
   const [error, setError] = useState(null);
   const [resolving, setResolving] = useState(null);
   const [resolution, setResolution] = useState("");
+  const [expanded, setExpanded] = useState(null);
 
   const load = useCallback(() => {
     const status = ["OPEN", "ASSIGNED", "IN_REVIEW", "RESOLVED", "DISMISSED"].includes(filter) ? filter : null;
@@ -73,6 +75,10 @@ export const Alerts = () => {
               </div>
               <span className={`chip ${a.severity}`}>{a.severity}</span>
               <span className={`chip ${a.status === "RESOLVED" ? "LOW" : a.status === "DISMISSED" ? "INFO" : "MEDIUM"}`}>{a.status}</span>
+              <button className="btn btn-sm btn-outline-secondary"
+                onClick={() => setExpanded(expanded === a.id ? null : a.id)}>
+                {expanded === a.id ? "Hide" : "Details"}
+              </button>
               {!["RESOLVED", "DISMISSED"].includes(a.status) && canAssign && !a.assigned_to && (
                 <button className="btn btn-sm btn-outline-secondary" onClick={() => assignToMe(a)}>Assign to me</button>
               )}
@@ -80,6 +86,7 @@ export const Alerts = () => {
                 <button className="btn btn-sm btn-outline-success" onClick={() => { setResolving(resolving === a.id ? null : a.id); setResolution(""); }}>Resolve</button>
               )}
             </div>
+            {expanded === a.id && <AlertDetails details={a.details} />}
             {resolving === a.id && (
               <div className="row g-1 align-items-end" style={{ marginTop: ".4rem", paddingLeft: "1.4rem" }}>
                 <div className="col-7">

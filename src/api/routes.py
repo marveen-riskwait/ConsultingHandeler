@@ -184,6 +184,11 @@ def create_customer(user):
     risk_engine.recompute(customer, actor=user, reason="Initial assessment")
     # Onboarding schedules the initial KYC review.
     review_engine.schedule_initial(customer, actor=user)
+    # Auto-enrichment from public sources — async when Celery is up, so bulk
+    # onboarding never blocks on external registries.
+    if _celery_enabled():
+        from api.tasks import run_enrichment
+        _dispatch(run_enrichment, customer.id, user.id)
     return jsonify(customer.serialize()), 201
 
 
@@ -1923,6 +1928,20 @@ def watchlist_ingest(user):
                                             prefer_live=prefer_live,
                                             limit=limit)]
     return jsonify([i.serialize() for i in imports]), 200
+
+
+@api.route("/customers/<int:cid>/enrich", methods=["POST"])
+@permission_required("kyc.edit")
+def enrich_customer(user, cid):
+    """Auto-fill the file from public sources (registries, LEI, adverse media).
+
+    Runs inline so the analyst gets the report immediately; the same engine
+    also runs asynchronously (Celery) when customers are created in bulk.
+    """
+    from api.engine import enrichment_service
+    customer = _get_customer_for(user, cid)
+    report = enrichment_service.enrich(customer, actor=user)
+    return jsonify(report), 200
 
 
 @api.route("/customers/<int:cid>/kyb-lookup", methods=["POST"])

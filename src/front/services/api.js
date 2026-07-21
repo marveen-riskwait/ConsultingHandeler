@@ -168,6 +168,7 @@ export const api = {
   ingestWatchlists: (source) =>
     request("/watchlists/ingest", { method: "POST", body: { source: source || "ALL" } }),
   kybLookup: (id) => request(`/customers/${id}/kyb-lookup`, { method: "POST" }),
+  enrich: (id) => request(`/customers/${id}/enrich`, { method: "POST" }),
 
   // Compliance Copilot (AI assistant)
   assistantMeta: () => request("/assistant/meta"),

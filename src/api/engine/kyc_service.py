@@ -7,6 +7,14 @@ from api.models import db, ProfileField, utcnow
 from api.engine import audit
 
 TRUSTED_SOURCES = {"provider", "passport", "id_document"}
+# Prefixes are trusted too: official registries queried by the enrichment
+# engine (e.g. "registry:companies_house") count as independent verification.
+TRUSTED_PREFIXES = ("registry:",)
+
+
+def _is_trusted(source):
+    return (source in TRUSTED_SOURCES
+            or any(source.startswith(p) for p in TRUSTED_PREFIXES))
 
 
 def set_field(customer, field_key, value, *, category=None, source="manual",
@@ -25,7 +33,7 @@ def set_field(customer, field_key, value, *, category=None, source="manual",
     field.last_changed_at = utcnow()
     # A high-confidence trusted source is auto-verified; otherwise a value change
     # resets verification.
-    if source in TRUSTED_SOURCES and (confidence or 0) >= 0.9:
+    if _is_trusted(source) and (confidence or 0) >= 0.9:
         field.verified = True
         field.verified_at = utcnow()
     elif old_value != value:

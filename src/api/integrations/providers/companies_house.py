@@ -123,6 +123,30 @@ class CompaniesHouseKYBProvider(KYBProvider):
             result_type="KYB", status=status,
             data=data, raw={"profile": profile, "officers": officers_raw})
 
+    def company_bundle(self, name=None, number=None):
+        """Everything the registry knows: profile + officers + PSC (UBOs).
+
+        Returns {company_number, profile, officers, psc} or None when the
+        company can't be found. Used by the enrichment engine.
+        """
+        if not number:
+            found = self._get("/search/companies",
+                              {"q": name or "", "items_per_page": 3}) or {}
+            items = found.get("items") or []
+            if not items:
+                return None
+            number = items[0].get("company_number")
+        profile = self._get(f"/company/{number}")
+        if not profile:
+            return None
+        officers = (self._get(f"/company/{number}/officers",
+                              {"items_per_page": 20}) or {}).get("items") or []
+        psc = (self._get(
+            f"/company/{number}/persons-with-significant-control",
+            {"items_per_page": 20}) or {}).get("items") or []
+        return {"company_number": number, "profile": profile,
+                "officers": officers, "psc": psc}
+
     def normalize_webhook(self, payload):
         # Companies House has a streaming API rather than signed webhooks; the
         # generic shape below keeps the pipeline happy if one is ever pointed here.

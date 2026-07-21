@@ -35,8 +35,8 @@ class ComplianceAlert(db.Model):
     resolved_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
-    def serialize(self):
-        return {
+    def serialize(self, with_details=True):
+        data = {
             "id": self.id,
             "customer_id": self.customer_id,
             "event_id": self.event_id,
@@ -52,3 +52,16 @@ class ComplianceAlert(db.Model):
             "resolved_at": self.resolved_at.isoformat() if self.resolved_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
+        if with_details and self.event_id:
+            # The triggering event's payload IS the evidence (matched name,
+            # score, sanction programmes, aliases…) — surface it for triage.
+            from api.models.compliance import ComplianceEvent
+            event = ComplianceEvent.query.get(self.event_id)
+            if event is not None:
+                data["details"] = {
+                    "event_type": event.event_type,
+                    "detected_at": (event.detected_at.isoformat()
+                                    if event.detected_at else None),
+                    "payload": event.payload or {},
+                }
+        return data

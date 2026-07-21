@@ -173,6 +173,21 @@ DEFAULT_RULES = [
         ],
     },
     {
+        "name": "Enrichment discrepancy -> data verification",
+        "event_type": "ENRICHMENT_DISCREPANCY",
+        "conditions": {},
+        "actions": [
+            {"type": "CREATE_TASK", "task_type": "DATA_VERIFICATION",
+             "title": "Registry data differs from declared data — verify",
+             "priority": "MEDIUM", "due_days": 3},
+            {"type": "NOTIFY", "severity": "MEDIUM", "requires_action": True,
+             "roles": ["KYC_ANALYST", "ANALYST"],
+             "title": "Enrichment found a discrepancy",
+             "message": "An official registry disagrees with declared customer "
+                        "data. Verify which value is correct."},
+        ],
+    },
+    {
         "name": "KYC form submitted -> analyst review",
         "event_type": "KYC_FORM_SUBMITTED",
         "conditions": {},

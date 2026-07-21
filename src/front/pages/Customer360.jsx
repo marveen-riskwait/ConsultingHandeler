@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { api } from "../services/api";
 import useGlobalReducer from "../hooks/useGlobalReducer";
 import { can } from "../permissions/can";
+import { AlertDetails } from "../components/AlertDetails";
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : "—");
 
@@ -52,6 +53,19 @@ export const Customer360 = () => {
   const [fieldForm, setFieldForm] = useState({ field_key: "", value: "", source: "manual" });
   const [kyb, setKyb] = useState(null);
   const [kybBusy, setKybBusy] = useState(false);
+  const [openAlert, setOpenAlert] = useState(null);
+  const [enriching, setEnriching] = useState(false);
+  const [enrichNote, setEnrichNote] = useState(null);
+
+  const runEnrichment = async () => {
+    setEnriching(true); setError(null); setEnrichNote(null);
+    try {
+      const report = await api.enrich(id);
+      setEnrichNote(report.summary);
+      await load(); loadKyb();
+    } catch (e) { setError(e.message); }
+    finally { setEnriching(false); }
+  };
 
   const runKybLookup = async () => {
     setKybBusy(true); setError(null);
@@ -163,11 +177,23 @@ export const Customer360 = () => {
           <Link to={`/assistant?customer=${id}`} className="btn btn-outline-secondary">
             <i className="fa-solid fa-robot" /> Ask Copilot
           </Link>
+          {can(store.user, "kyc.edit") && (
+            <button className="btn btn-outline-secondary" onClick={runEnrichment}
+              disabled={enriching} title="Auto-fill from public sources (registries, LEI, adverse media)">
+              <i className="fa-solid fa-wand-magic-sparkles" /> {enriching ? "Enriching…" : "Enrich"}
+            </button>
+          )}
           <button className="btn btn-co" onClick={runScreening} disabled={screening}>
             <i className="fa-solid fa-magnifying-glass" /> {screening ? "Screening…" : "Run screening"}
           </button>
         </div>
       </div>
+
+      {enrichNote && (
+        <div className="alert alert-success py-2">
+          <i className="fa-solid fa-wand-magic-sparkles" /> {enrichNote}
+        </div>
+      )}
 
       <div className="row g-3">
         {/* Risk — explainable */}
@@ -299,10 +325,17 @@ export const Customer360 = () => {
             <div className="section-title">Open compliance alerts</div>
             {open_alerts.length === 0 && <div className="muted" style={{ fontSize: ".88rem" }}>No open alerts.</div>}
             {open_alerts.map((a) => (
-              <div className="work-row" key={a.id}>
-                <span className={`dotsev ${a.severity}`} />
-                <div className="grow"><div className="title">{a.title}</div><div className="meta">{a.status} · {a.source}</div></div>
-                <span className={`chip ${a.severity}`}>{a.severity}</span>
+              <div key={a.id} style={{ borderBottom: "1px solid var(--co-border)" }}>
+                <div className="work-row" style={{ borderBottom: "none" }}>
+                  <span className={`dotsev ${a.severity}`} />
+                  <div className="grow"><div className="title">{a.title}</div><div className="meta">{a.status} · {a.source}</div></div>
+                  <span className={`chip ${a.severity}`}>{a.severity}</span>
+                  <button className="btn btn-sm btn-outline-secondary"
+                    onClick={() => setOpenAlert(openAlert === a.id ? null : a.id)}>
+                    {openAlert === a.id ? "Hide" : "Details"}
+                  </button>
+                </div>
+                {openAlert === a.id && <AlertDetails details={a.details} />}
               </div>
             ))}
           </div>
@@ -438,7 +471,7 @@ export const Customer360 = () => {
             )}
             {can(store.user, "kyb.edit") && (
               <form onSubmit={submitOwner} className="row g-1 align-items-end" style={{ marginTop: ".75rem", borderTop: "1px solid var(--co-border)", paddingTop: ".6rem" }}>
-                <div className="col-4">
+                <div className="col-3">
                   <input className="form-control form-control-sm" placeholder="Name" required
                     value={ownerForm.owner_name} onChange={(e) => setOwnerForm({ ...ownerForm, owner_name: e.target.value })} />
                 </div>
@@ -458,7 +491,7 @@ export const Customer360 = () => {
                     <option value="ORGANIZATION">Company</option>
                   </select>
                 </div>
-                <div className="col-1">
+                <div className="col-2">
                   <input className="form-control form-control-sm" placeholder="%" type="number" min="0" max="100"
                     value={ownerForm.percentage} onChange={(e) => setOwnerForm({ ...ownerForm, percentage: e.target.value })} />
                 </div>

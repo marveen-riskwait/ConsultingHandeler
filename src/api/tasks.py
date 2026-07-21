@@ -36,6 +36,18 @@ def run_screening(customer_id, requested_by_id=None):
     return {"customer_id": customer_id, "run_id": run.id, "matches": emitted}
 
 
+@celery.task(name="api.tasks.run_enrichment")
+def run_enrichment(customer_id, requested_by_id=None):
+    """Fill a customer's file from public sources (registries, LEI, media)."""
+    from api.engine import enrichment_service
+    customer = Customer.query.get(customer_id)
+    if customer is None:
+        return {"error": "customer not found"}
+    actor = User.query.get(requested_by_id) if requested_by_id else None
+    report = enrichment_service.enrich(customer, actor=actor)
+    return {"customer_id": customer_id, "summary": report["summary"]}
+
+
 @celery.task(name="api.tasks.check_review_deadlines")
 def check_review_deadlines():
     """Continuous monitoring: flip due/overdue reviews and emit REVIEW_DUE /

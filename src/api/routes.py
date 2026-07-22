@@ -41,7 +41,8 @@ from api.engine.screening_service import review_match
 from api.tasks import run_screening
 
 api = Blueprint("api", __name__)
-CORS(api)
+from api.security import cors_origins
+CORS(api, origins=cors_origins(), supports_credentials=True)
 
 
 def _celery_enabled():
@@ -75,6 +76,10 @@ def register():
     password = body.get("password") or ""
     if not email or not password:
         raise APIException("email and password are required", status_code=400)
+    from api.security import password_problem
+    problem = password_problem(password)
+    if problem:
+        raise APIException(problem, status_code=400)
     if User.query.filter_by(email=email).first():
         raise APIException("Email already registered", status_code=409)
 
@@ -1060,6 +1065,10 @@ def accept_invitation():
     password = body.get("password") or ""
     if not token or not password:
         raise APIException("token and password are required", status_code=400)
+    from api.security import password_problem
+    problem = password_problem(password)
+    if problem:
+        raise APIException(problem, status_code=400)
     inv = Invitation.query.filter_by(token=token).first()
     if inv is None or not inv.is_valid():
         raise APIException("Invitation is invalid or expired", status_code=400)

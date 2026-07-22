@@ -64,6 +64,8 @@ MIGRATE = Migrate(app, db, compare_type=True, render_as_batch=True)
 db.init_app(app)
 
 # JWT authentication
+from api.security import check_startup_secret
+check_startup_secret()   # refuses to boot in production without a real secret
 app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY") or os.getenv(
     "FLASK_APP_KEY", "change-me-in-production")
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=12)

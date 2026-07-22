@@ -29,7 +29,8 @@ portal = Blueprint("portal", __name__)
 # Same CORS posture as the api blueprint: in two-server dev the page runs on
 # Vite's origin, and without these headers the browser silently refuses every
 # portal call — invisible in single-server mode, fatal on port 3000.
-CORS(portal)
+from api.security import cors_origins
+CORS(portal, origins=cors_origins(), supports_credentials=True)
 
 # Reasons an analyst may return a document with. Closed list first, because a
 # free-text reason is where an accidental disclosure would happen; the analyst

@@ -23,6 +23,7 @@ redis = "*"
 anthropic = "*"
 flask-socketio = "*"
 simple-websocket = "*"
+segno = "*"
 
 [dev-packages]
 pytest = "*"

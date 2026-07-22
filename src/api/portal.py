@@ -18,6 +18,7 @@ them, what they have sent and its state, their submission progress, and the
 conversation with the firm. What they never get: the assessment.
 """
 from flask import Blueprint, request, jsonify
+from flask_cors import CORS
 
 from api.models import db, Customer, Document, ProfileField, User, utcnow
 from api.utils import APIException
@@ -25,6 +26,10 @@ from api.auth import login_required
 from api.engine import audit, requirement_engine, kyc_service
 
 portal = Blueprint("portal", __name__)
+# Same CORS posture as the api blueprint: in two-server dev the page runs on
+# Vite's origin, and without these headers the browser silently refuses every
+# portal call — invisible in single-server mode, fatal on port 3000.
+CORS(portal)
 
 # Reasons an analyst may return a document with. Closed list first, because a
 # free-text reason is where an accidental disclosure would happen; the analyst

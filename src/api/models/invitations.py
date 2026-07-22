@@ -27,6 +27,11 @@ class Invitation(db.Model):
     email: Mapped[str] = mapped_column(String(120), nullable=False)
     proposed_role: Mapped[str] = mapped_column(String(40), nullable=False, default="KYC_ANALYST")
     proposed_team_id: Mapped[int] = mapped_column(ForeignKey("team.id"), nullable=True)
+    # Set on portal invitations: accepting creates a CUSTOMER_USER attached to
+    # this file. This link is what makes the QR/link registration safe — the
+    # account is bound to the customer by the token, never by anything the
+    # person typing the form claims.
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customer.id"), nullable=True)
     token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False,
                                        default=new_invitation_token)
     status: Mapped[str] = mapped_column(String(20), default="PENDING")
@@ -47,6 +52,7 @@ class Invitation(db.Model):
             "email": self.email,
             "proposed_role": self.proposed_role,
             "proposed_team_id": self.proposed_team_id,
+            "customer_id": self.customer_id,
             "status": self.status,
             "created_by": self.created_by,
             "created_at": self.created_at.isoformat() if self.created_at else None,

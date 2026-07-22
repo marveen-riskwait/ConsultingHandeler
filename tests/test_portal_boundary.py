@@ -423,3 +423,90 @@ def test_the_analyst_sees_what_the_customer_sent_and_said(client, portal, tokens
     assert doc["description"] == "Photo of my ID card, front side"
     assert doc["media_type"] == "image/png" and doc["has_file"] is True
     assert doc["file_url"].startswith("/api/media/")
+
+
+# --- portal invitations: how a client gets their account --------------------
+
+def test_portal_invite_creates_a_token_bound_account(client, tokens, app):
+    """The whole flow: staff invites an email from the customer file, the
+    person registers through the link, and the account is attached to that
+    customer by the token — never by anything the form claims."""
+    to = tokens["officer@test.io"]
+    cid = client.post("/api/customers", headers=auth(to),
+                      json={"name": "Invited Client Co",
+                            "customer_type": "COMPANY"}).get_json()["id"]
+
+    r = client.post(f"/api/customers/{cid}/portal-access", headers=auth(to),
+                    json={"email": "new.client@example.com"})
+    assert r.status_code == 201
+    body = r.get_json()
+    assert body["invitation"]["customer_id"] == cid
+    assert "/login?invite=" in body["link"]
+    assert body["qr_svg"].lstrip().startswith("<?xml") or "<svg" in body["qr_svg"]
+    # No transport in tests: the failure is reported, never raised.
+    assert body["email"]["sent"] is False
+
+    token = body["link"].split("invite=")[-1]
+    acc = client.post("/api/auth/accept-invitation",
+                      json={"token": token, "password": "a-strong-one",
+                            "full_name": "New Client"})
+    assert acc.status_code == 201
+    jwt = acc.get_json()["token"]
+
+    me = client.get("/api/portal/me", headers=auth(jwt))
+    assert me.status_code == 200
+    assert me.get_json()["customer"]["id"] == cid
+
+    # And the boundary holds for the new account.
+    assert client.get("/api/customers", headers=auth(jwt)).status_code == 403
+
+
+def test_reinviting_replaces_the_previous_token(client, tokens):
+    """A mis-sent link must always be killable by sending a fresh one."""
+    to = tokens["officer@test.io"]
+    cid = client.post("/api/customers", headers=auth(to),
+                      json={"name": "Reinvited Co",
+                            "customer_type": "COMPANY"}).get_json()["id"]
+    first = client.post(f"/api/customers/{cid}/portal-access", headers=auth(to),
+                        json={"email": "again@example.com"}).get_json()
+    second = client.post(f"/api/customers/{cid}/portal-access", headers=auth(to),
+                         json={"email": "again@example.com"}).get_json()
+    old_token = first["link"].split("invite=")[-1]
+
+    r = client.post("/api/auth/accept-invitation",
+                    json={"token": old_token, "password": "whatever-pass"})
+    assert r.status_code == 400, "the replaced token must be dead"
+
+    status = client.get(f"/api/customers/{cid}/portal-access",
+                        headers=auth(to)).get_json()
+    assert len(status["pending"]) == 1
+    assert status["pending"][0]["id"] == second["invitation"]["id"]
+
+
+def test_revoked_invite_cannot_register(client, tokens):
+    to = tokens["officer@test.io"]
+    cid = client.post("/api/customers", headers=auth(to),
+                      json={"name": "Revoked Invite Co",
+                            "customer_type": "COMPANY"}).get_json()["id"]
+    created = client.post(f"/api/customers/{cid}/portal-access", headers=auth(to),
+                          json={"email": "revoked@example.com"}).get_json()
+    client.delete(f"/api/customers/{cid}/portal-access/{created['invitation']['id']}",
+                  headers=auth(to))
+    token = created["link"].split("invite=")[-1]
+    assert client.post("/api/auth/accept-invitation",
+                       json={"token": token,
+                             "password": "whatever-pass"}).status_code == 400
+
+
+def test_portal_invite_rejects_bad_input(client, tokens, portal):
+    to = tokens["officer@test.io"]
+    cid = portal["mine"]
+    assert client.post(f"/api/customers/{cid}/portal-access", headers=auth(to),
+                       json={"email": "not-an-email"}).status_code == 400
+    # An email that already has an account cannot be invited again.
+    assert client.post(f"/api/customers/{cid}/portal-access", headers=auth(to),
+                       json={"email": "portal@test.io"}).status_code == 409
+    # And a portal account cannot mint invitations (boundary).
+    assert client.post(f"/api/customers/{cid}/portal-access",
+                       headers=auth(portal["token"]),
+                       json={"email": "x@y.io"}).status_code == 403

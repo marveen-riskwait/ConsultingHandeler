@@ -224,6 +224,11 @@ export const api = {
     request(`/watchlists/wallet?address=${encodeURIComponent(address)}`),
   kybLookup: (id) => request(`/customers/${id}/kyb-lookup`, { method: "POST" }),
   enrich: (id) => request(`/customers/${id}/enrich`, { method: "POST" }),
+  portalAccess: (id) => request(`/customers/${id}/portal-access`),
+  invitePortal: (id, email) =>
+    request(`/customers/${id}/portal-access`, { method: "POST", body: { email } }),
+  revokePortalInvite: (id, iid) =>
+    request(`/customers/${id}/portal-access/${iid}`, { method: "DELETE" }),
   deletionCheck: (id) => request(`/customers/${id}/deletion-check`),
   deleteCustomer: (id, payload) =>
     request(`/customers/${id}`, { method: "DELETE", body: payload }),

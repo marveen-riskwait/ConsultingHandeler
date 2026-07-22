@@ -57,7 +57,8 @@ def _split_from(value):
     return None, (value or "").strip()
 
 
-def _send_brevo(to, subject, body):
+def _send_brevo(to, subject, body, html=None, inline_png=None):
+    import base64
     from api.integrations.ai.base import post_json
     name, email = _split_from(os.getenv("MAIL_FROM"))
     sender = {"email": email}
@@ -65,6 +66,15 @@ def _send_brevo(to, subject, body):
         sender["name"] = name
     payload = {"sender": sender, "to": [{"email": to}],
                "subject": subject, "textContent": body}
+    if html:
+        payload["htmlContent"] = html
+    if inline_png:
+        # Brevo delivers this as a regular attachment; Gmail strips data: URI
+        # images, so an attached PNG is the reliable way the QR arrives.
+        payload["attachment"] = [{
+            "name": inline_png[0],
+            "content": base64.b64encode(inline_png[1]).decode(),
+        }]
     result = post_json(BREVO_ENDPOINT, payload,
                        headers={"api-key": os.getenv("BREVO_API_KEY"),
                                 "accept": "application/json"})
@@ -72,12 +82,21 @@ def _send_brevo(to, subject, body):
             "id": (result or {}).get("messageId")}
 
 
-def _send_smtp(to, subject, body):
+def _send_smtp(to, subject, body, html=None, inline_png=None):
     message = EmailMessage()
     message["From"] = os.getenv("MAIL_FROM")
     message["To"] = to
     message["Subject"] = subject
     message.set_content(body)
+    if html:
+        if inline_png:
+            # Referenced from the HTML as <img src="cid:NAME"> — the one way
+            # every major client actually displays an embedded image.
+            html = html.replace("cid:__QR__", f"cid:{inline_png[0]}")
+        message.add_alternative(html, subtype="html")
+        if inline_png:
+            message.get_payload()[-1].add_related(
+                inline_png[1], "image", "png", cid=f"<{inline_png[0]}>")
 
     host = os.getenv("SMTP_HOST")
     port = int(os.getenv("SMTP_PORT", "587"))
@@ -94,8 +113,12 @@ def portal_url():
     return os.getenv("PORTAL_URL", "").rstrip("/") or None
 
 
-def send(to, subject, body):
-    """Best effort. Returns {sent, reason} and never raises."""
+def send(to, subject, body, html=None, inline_png=None):
+    """Best effort. Returns {sent, reason} and never raises.
+
+    `inline_png` is (name, bytes): embedded by CID over SMTP, attached on
+    Brevo. `html` may reference it as <img src="cid:__QR__">.
+    """
     if not to:
         return {"sent": False, "reason": "no recipient"}
     if os.getenv("MAIL_SUPPRESS") == "1":
@@ -106,8 +129,8 @@ def send(to, subject, body):
 
     how = transport()
     try:
-        return _send_brevo(to, subject, body) if how == "brevo" \
-            else _send_smtp(to, subject, body)
+        return _send_brevo(to, subject, body, html, inline_png) if how == "brevo" \
+            else _send_smtp(to, subject, body, html, inline_png)
     except Exception as exc:
         return {"sent": False, "transport": how,
                 "reason": f"{type(exc).__name__}: {exc}"}

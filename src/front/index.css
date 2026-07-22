@@ -560,3 +560,14 @@ h1, h2, h3, h4, .co-serif {
   border: 1px solid var(--co-border); border-left: 3px solid var(--sev-high);
   border-radius: 8px; background: #fafbfc;
 }
+
+/* Portal access modal (components/PortalAccess.jsx). */
+.pa-invite {
+  display: flex; gap: .9rem; align-items: flex-start;
+  border: 1px solid var(--co-border); border-radius: 10px; padding: .8rem;
+}
+.pa-qr svg { width: 128px; height: 128px; display: block; }
+.pa-link {
+  font-size: .74rem; color: var(--co-muted); word-break: break-all;
+  margin-top: .3rem; font-family: monospace;
+}

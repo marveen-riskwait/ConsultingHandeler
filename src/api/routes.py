@@ -1075,6 +1075,9 @@ def accept_invitation():
         role=inv.proposed_role,
         role_id=role.id if role else None,
         organization_id=inv.organization_id,
+        # A portal invitation binds the account to its customer file here,
+        # from the token — the registration form has no say in it.
+        customer_id=inv.customer_id,
     )
     db.session.add(new_user)
     db.session.flush()
@@ -2148,6 +2151,131 @@ def watchlist_ingest(user):
                                             prefer_live=prefer_live,
                                             limit=limit)]
     return jsonify([i.serialize() for i in imports]), 200
+
+
+# ---------------------------------------------------------------------------
+# Portal access — how a customer gets their account.
+#
+# The staff member enters an email on the customer file; the client receives a
+# link (a "Register" button) and a QR code that lead to the same registration
+# page. The token carries the customer binding, so whoever registers through it
+# is attached to this file and lands in the portal — the form itself has no say
+# in which customer the account belongs to.
+# ---------------------------------------------------------------------------
+def _portal_invite_link(token):
+    base = (os.getenv("PORTAL_URL") or request.host_url.rstrip("/"))
+    return f"{base.rstrip('/')}/login?invite={token}"
+
+
+def _qr_svg(link):
+    import io as _io
+    import segno
+    buf = _io.BytesIO()          # segno writes SVG as bytes
+    segno.make(link, error="m").save(buf, kind="svg", scale=4,
+                                     dark="#131722", border=2)
+    return buf.getvalue().decode("utf-8")
+
+
+def _qr_png(link):
+    import io as _io
+    import segno
+    buf = _io.BytesIO()
+    segno.make(link, error="m").save(buf, kind="png", scale=6, border=2)
+    return buf.getvalue()
+
+
+@api.route("/customers/<int:cid>/portal-access", methods=["GET"])
+@permission_required("customer.view")
+def portal_access_status(user, cid):
+    """Who can already sign in for this customer, and any pending invite."""
+    customer = _get_customer_for(user, cid)
+    accounts = User.query.filter_by(customer_id=customer.id).all()
+    pending = (Invitation.query
+               .filter_by(customer_id=customer.id, status="PENDING")
+               .order_by(Invitation.id.desc()).all())
+    out = []
+    for inv in pending:
+        if not inv.is_valid():
+            continue
+        link = _portal_invite_link(inv.token)
+        out.append({**inv.serialize(), "link": link, "qr_svg": _qr_svg(link)})
+    return jsonify({
+        "accounts": [{"id": u.id, "email": u.email, "full_name": u.full_name,
+                      "is_active": u.is_active} for u in accounts],
+        "pending": out,
+    }), 200
+
+
+@api.route("/customers/<int:cid>/portal-access", methods=["POST"])
+@permission_required("customer.update")
+def invite_customer_to_portal(user, cid):
+    """Create the portal invitation and email the link + QR to the client."""
+    from api.integrations import mailer
+    customer = _get_customer_for(user, cid)
+    email = ((request.get_json(silent=True) or {}).get("email") or "").strip().lower()
+    if "@" not in email or "." not in email.split("@")[-1]:
+        raise APIException("A valid email address is required", status_code=400)
+    if User.query.filter_by(email=email).first():
+        raise APIException("A user with this email already exists", status_code=409)
+
+    # One live invitation per customer+email: re-inviting replaces the token,
+    # so a mis-sent link can always be killed by sending a fresh one.
+    for old in Invitation.query.filter_by(customer_id=customer.id,
+                                          email=email, status="PENDING").all():
+        old.status = "REVOKED"
+
+    inv = Invitation(organization_id=customer.organization_id, email=email,
+                     proposed_role="CUSTOMER_USER", customer_id=customer.id,
+                     created_by=user.id)
+    db.session.add(inv)
+    db.session.flush()
+    audit.record("PORTAL_INVITED", "customer", customer.id, actor=user,
+                 new_value=email, reason="Portal access invitation")
+    db.session.commit()
+
+    link = _portal_invite_link(inv.token)
+    org = customer.organization.name if customer.organization else "your compliance team"
+    html = f"""
+<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;padding:24px">
+  <h2 style="color:#131722">{org}</h2>
+  <p>Hello,</p>
+  <p>{org} has opened a secure portal for you. Use it to provide your
+     information, send documents and message the team directly.</p>
+  <p style="text-align:center;margin:28px 0">
+    <a href="{link}" style="background:#111a2e;color:#ffffff;padding:14px 34px;
+       border-radius:8px;text-decoration:none;font-weight:bold">Register</a>
+  </p>
+  <p>Or scan this QR code with your phone — it leads to the same page:</p>
+  <p style="text-align:center"><img src="cid:__QR__" alt="Registration QR code"
+     width="180" height="180" /></p>
+  <p style="color:#6b7280;font-size:12px">This invitation expires in 7 days.
+     If you were not expecting it, you can ignore this message.</p>
+</div>"""
+    text = (f"{org} has opened a secure portal for you.\n\n"
+            f"Register here: {link}\n\n"
+            "This invitation expires in 7 days.")
+    email_result = mailer.send(email, f"{org} — your secure portal access",
+                               text, html=html,
+                               inline_png=("portal-qr.png", _qr_png(link)))
+    return jsonify({
+        "invitation": inv.serialize(),
+        "link": link,
+        "qr_svg": _qr_svg(link),
+        "email": email_result,
+    }), 201
+
+
+@api.route("/customers/<int:cid>/portal-access/<int:iid>", methods=["DELETE"])
+@permission_required("customer.update")
+def revoke_portal_invite(user, cid, iid):
+    customer = _get_customer_for(user, cid)
+    inv = Invitation.query.filter_by(id=iid, customer_id=customer.id).first()
+    if inv is None:
+        raise APIException("Invitation not found", status_code=404)
+    inv.status = "REVOKED"
+    audit.record("PORTAL_INVITE_REVOKED", "customer", customer.id, actor=user,
+                 new_value=inv.email, commit=True)
+    return jsonify({"revoked": True}), 200
 
 
 @api.route("/customers/<int:cid>/deletion-check", methods=["GET"])

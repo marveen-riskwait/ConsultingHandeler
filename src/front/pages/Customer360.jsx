@@ -7,6 +7,7 @@ import { AlertDetails } from "../components/AlertDetails";
 import { DeleteCustomerModal } from "../components/DeleteCustomerModal";
 import { RowMenu } from "../components/RowMenu";
 import { DocumentReview } from "../components/DocumentReview";
+import { PortalAccess } from "../components/PortalAccess";
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : "—");
 
@@ -61,6 +62,7 @@ export const Customer360 = () => {
   const [enrichNote, setEnrichNote] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [openingChat, setOpeningChat] = useState(false);
+  const [showPortalAccess, setShowPortalAccess] = useState(false);
 
   // The client conversation belongs to the customer file: opening it joins the
   // team room rather than starting a private thread with whoever clicked.
@@ -194,6 +196,10 @@ export const Customer360 = () => {
           <Link to={`/assistant?customer=${id}`} className="btn btn-outline-secondary">
             <i className="fa-solid fa-robot" /> Ask Copilot
           </Link>
+          <button className="btn btn-outline-secondary" title="Invite this client to their portal"
+            onClick={() => setShowPortalAccess(true)}>
+            <i className="fa-solid fa-user-shield" /> Portal access
+          </button>
           <button className="btn btn-outline-secondary" onClick={openClientChat}
             disabled={openingChat}
             title="The conversation with this client, read by the team on the file">
@@ -217,6 +223,10 @@ export const Customer360 = () => {
           ]} />
         </div>
       </div>
+
+      {showPortalAccess && (
+        <PortalAccess customerId={id} onClose={() => setShowPortalAccess(false)} />
+      )}
 
       {confirmDelete && (
         <DeleteCustomerModal

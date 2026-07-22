@@ -293,10 +293,12 @@ def test_the_email_says_nothing_about_the_file(app, monkeypatch):
 def test_a_missing_mail_server_never_breaks_the_action(app, monkeypatch):
     """Returning a document is a compliance action; the courtesy note is not."""
     from api.integrations import mailer
-    monkeypatch.delenv("SMTP_HOST", raising=False)
-    monkeypatch.delenv("MAIL_SUPPRESS", raising=False)
+    for key in ("SMTP_HOST", "BREVO_API_KEY", "MAIL_SUPPRESS", "MAIL_FROM"):
+        monkeypatch.delenv(key, raising=False)
     out = mailer.send("someone@example.com", "hi", "body")
-    assert out["sent"] is False and "not configured" in out["reason"]
+    assert out["sent"] is False
+    # And the reason says what to set, rather than just failing quietly.
+    assert "BREVO_API_KEY" in out["reason"] and "SMTP_HOST" in out["reason"]
 
 
 def test_returning_a_document_notifies_the_customer(client, portal, tokens, app, monkeypatch):
@@ -320,3 +322,47 @@ def test_returning_a_document_notifies_the_customer(client, portal, tokens, app,
     client.post(f"/api/customers/{portal['mine']}/documents/{doc['id']}/review",
                 headers=auth(officer), json={"decision": "ACCEPT"})
     assert calls == []
+
+
+def test_brevo_is_preferred_over_smtp_and_shaped_correctly(app, monkeypatch):
+    """PaaS hosts block outbound 587, so an API transport that works in
+    production must win over an SMTP relay that only works on a laptop."""
+    from api.integrations import mailer
+
+    monkeypatch.setenv("MAIL_FROM", "Acme Compliance <no-reply@acme.io>")
+    monkeypatch.setenv("SMTP_HOST", "smtp-relay.brevo.com")
+    monkeypatch.delenv("MAIL_SUPPRESS", raising=False)
+    assert mailer.transport() == "smtp"
+
+    monkeypatch.setenv("BREVO_API_KEY", "xkeysib-test")
+    assert mailer.transport() == "brevo"
+
+    captured = {}
+    def fake_post(url, payload, headers=None):
+        captured.update(url=url, payload=payload, headers=headers)
+        return {"messageId": "<abc@brevo>"}
+    monkeypatch.setattr("api.integrations.ai.base.post_json", fake_post)
+
+    out = mailer.send("client@example.com", "Subject", "Body")
+    assert out == {"sent": True, "transport": "brevo", "id": "<abc@brevo>"}
+    assert captured["url"] == mailer.BREVO_ENDPOINT
+    assert captured["headers"]["api-key"] == "xkeysib-test"
+    # Brevo wants the sender split into name + email, not an RFC 5322 string.
+    assert captured["payload"]["sender"] == {"email": "no-reply@acme.io",
+                                             "name": "Acme Compliance"}
+    assert captured["payload"]["to"] == [{"email": "client@example.com"}]
+
+
+def test_a_broken_brevo_key_does_not_break_the_action(app, monkeypatch):
+    from api.integrations import mailer
+
+    monkeypatch.setenv("MAIL_FROM", "no-reply@acme.io")
+    monkeypatch.setenv("BREVO_API_KEY", "wrong")
+    monkeypatch.delenv("MAIL_SUPPRESS", raising=False)
+    monkeypatch.setattr("api.integrations.ai.base.post_json",
+                        lambda *a, **k: (_ for _ in ()).throw(
+                            RuntimeError("HTTP 401: unauthorised")))
+
+    out = mailer.send("client@example.com", "Subject", "Body")
+    assert out["sent"] is False
+    assert "401" in out["reason"] and out["transport"] == "brevo"

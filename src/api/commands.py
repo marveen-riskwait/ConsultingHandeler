@@ -1,3 +1,4 @@
+import os
 import click
 
 from api.models import (
@@ -546,6 +547,25 @@ def _seed_ownership(org):
 
 
 def setup_commands(app):
+
+    @app.cli.command("mail-test")
+    @click.argument("recipient")
+    def mail_test(recipient):
+        """Send the customer notification to an address, to check the setup."""
+        from api.integrations import mailer
+        how = mailer.transport()
+        if how is None:
+            click.echo("No transport configured. Set BREVO_API_KEY (or "
+                       "SMTP_HOST) and MAIL_FROM in .env.")
+            return
+        click.echo(f"Transport: {how} · from: {os.getenv('MAIL_FROM')} · "
+                   f"portal link: {mailer.portal_url() or '(none — set PORTAL_URL)'}")
+        result = mailer.send(
+            recipient, "Test — this is what a customer receives",
+            "Hello,\n\nThis is the notification a customer gets when the firm "
+            "is waiting on them. It deliberately says nothing about their "
+            "file.\n\n" + mailer._sign_in_line() + "\n")
+        click.echo(f"Result: {result}")
 
     @app.cli.command("sync-country-risk")
     def sync_country_risk():

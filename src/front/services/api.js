@@ -148,6 +148,8 @@ export const api = {
   portalForm: () => request("/portal/kyc-form"),
   portalSaveForm: (fields) =>
     request("/portal/kyc-form", { method: "POST", body: { fields } }),
+  portalSubmit: () => request("/portal/kyc-form/submit", { method: "POST" }),
+  portalReopen: () => request("/portal/kyc-form/reopen", { method: "POST" }),
   portalDocuments: () => request("/portal/documents"),
   portalDeleteDocument: (id) =>
     request(`/portal/documents/${id}`, { method: "DELETE" }),

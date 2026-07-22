@@ -345,6 +345,12 @@ def review_document(user, cid, did):
     audit.record("DOCUMENT_REVIEWED", "document", doc.id, actor=user,
                  new_value=decision, reason=doc.rejection_reason or "accepted")
     db.session.commit()
+    if decision == "RETURN":
+        # A customer who is not told is a customer who does not resend. The
+        # email says only that a document is needed — the reason stays behind
+        # the login.
+        from api.portal import notify_customer
+        notify_customer(customer, what="a document")
     requirement_engine.evaluate(customer)
     db.session.commit()
     return jsonify(doc.serialize()), 200

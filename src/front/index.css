@@ -548,3 +548,8 @@ h1, h2, h3, h4, .co-serif {
   border-radius: 12px; background: #eef1f6; font-size: .9rem; white-space: pre-wrap;
 }
 .pt-msg.mine { align-self: flex-end; background: var(--co-primary); color: #fff; }
+.pt-submit {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  background: var(--co-surface); border: 1px solid var(--co-border);
+  border-radius: 12px; padding: .8rem 1rem; margin-bottom: 1rem;
+}

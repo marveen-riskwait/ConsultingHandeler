@@ -230,3 +230,93 @@ def test_returning_a_document_requires_a_reason(client, portal, tokens):
     r = client.post(f"/api/customers/{portal['mine']}/documents/{doc['id']}/review",
                     headers=auth(officer), json={"decision": "RETURN"})
     assert r.status_code == 400
+
+
+# --- submitting, taking it back, and being told --------------------------------
+
+def test_submit_then_reopen_while_nobody_has_started(client, portal, app):
+    t = portal["token"]
+    assert client.get("/api/portal/me", headers=auth(t)).get_json()["customer"]["submitted"] is False
+
+    r = client.post("/api/portal/kyc-form/submit", headers=auth(t))
+    assert r.status_code == 200 and r.get_json()["submitted"] is True
+    assert client.post("/api/portal/kyc-form/submit",
+                       headers=auth(t)).status_code == 409   # already submitted
+
+    r = client.post("/api/portal/kyc-form/reopen", headers=auth(t))
+    assert r.status_code == 200 and r.get_json()["submitted"] is False
+    # And they can carry on editing.
+    assert client.post("/api/portal/kyc-form", headers=auth(t),
+                       json={"fields": {"occupation": "Architect"}}).status_code == 200
+
+
+def test_reopen_is_refused_once_review_has_started(client, portal, app):
+    """Pulling the file out from under an analyst mid-review would be worse
+    than making the customer ask — so the refusal points them at the team."""
+    from api.models import db, Task
+
+    t = portal["token"]
+    client.post("/api/portal/kyc-form/submit", headers=auth(t))
+    with app.app_context():
+        db.session.add(Task(customer_id=portal["mine"], task_type="KYC_REVIEW",
+                            title="Review", status="IN_PROGRESS"))
+        db.session.commit()
+
+    r = client.post("/api/portal/kyc-form/reopen", headers=auth(t))
+    assert r.status_code == 409
+    assert "send us a message" in r.get_json()["message"].lower()
+
+
+def test_the_email_says_nothing_about_the_file(app, monkeypatch):
+    """Email is unencrypted and lands in shared inboxes. A notification may say
+    that something is waiting; it may not say what was returned or why."""
+    from api.integrations import mailer
+    from api.models import User
+
+    sent = {}
+    monkeypatch.setattr(mailer, "send",
+                        lambda to, subject, body: sent.update(
+                            to=to, subject=subject, body=body) or {"sent": True})
+    monkeypatch.setenv("PORTAL_URL", "https://portal.example.com")
+
+    with app.app_context():
+        user = User.query.filter_by(email="portal@test.io").first()
+        mailer.notify_action_needed(user, "Acme Compliance", what="a document")
+
+    blob = (sent["subject"] + " " + sent["body"]).lower()
+    assert "acme compliance" in blob and "a document" in blob
+    for forbidden in ("risk", "sanction", "pep", "unreadable", "expired",
+                      "screening", "review", "passport", "proof of address"):
+        assert forbidden not in blob, f"{forbidden} travelled by email"
+
+
+def test_a_missing_mail_server_never_breaks_the_action(app, monkeypatch):
+    """Returning a document is a compliance action; the courtesy note is not."""
+    from api.integrations import mailer
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.delenv("MAIL_SUPPRESS", raising=False)
+    out = mailer.send("someone@example.com", "hi", "body")
+    assert out["sent"] is False and "not configured" in out["reason"]
+
+
+def test_returning_a_document_notifies_the_customer(client, portal, tokens, app, monkeypatch):
+    calls = []
+    from api.integrations import mailer
+    monkeypatch.setattr(mailer, "send",
+                        lambda to, subject, body: calls.append(to) or {"sent": True})
+
+    t, officer = portal["token"], tokens["officer@test.io"]
+    doc = client.post("/api/portal/documents", headers=auth(t),
+                      data={"doc_type": "OTHER",
+                            "file": (io.BytesIO(b"x"), "a.pdf", "application/pdf")},
+                      content_type="multipart/form-data").get_json()
+    client.post(f"/api/customers/{portal['mine']}/documents/{doc['id']}/review",
+                headers=auth(officer),
+                json={"decision": "RETURN", "reason_code": "UNREADABLE"})
+    assert "portal@test.io" in calls
+
+    # Accepting is not a chore for the customer, so it does not email them.
+    calls.clear()
+    client.post(f"/api/customers/{portal['mine']}/documents/{doc['id']}/review",
+                headers=auth(officer), json={"decision": "ACCEPT"})
+    assert calls == []

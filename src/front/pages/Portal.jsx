@@ -236,6 +236,7 @@ export const Portal = () => {
   const [data, setData] = useState(null);
   const [tab, setTab] = useState("details");
   const [notice, setNotice] = useState(null);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
   const reload = useCallback(() => {
@@ -249,6 +250,19 @@ export const Portal = () => {
   }, [notice]);
 
   const notify = (msg, isError) => (isError ? setError(msg) : setNotice(msg));
+
+  const submit = async () => {
+    setBusy(true); setError(null);
+    try { await api.portalSubmit(); notify("Thank you — your file has been sent to our team."); reload(); }
+    catch (e) { notify(e.message, true); }
+    finally { setBusy(false); }
+  };
+  const reopen = async () => {
+    setBusy(true); setError(null);
+    try { await api.portalReopen(); notify("Your file is open again — you can make changes."); reload(); }
+    catch (e) { notify(e.message, true); }
+    finally { setBusy(false); }
+  };
   const logout = () => { resetSocket(); dispatch({ type: "logout" }); };
 
   const tabs = [
@@ -279,6 +293,38 @@ export const Portal = () => {
           and our compliance team.
         </p>
         {data && <Progress progress={data.progress} />}
+        {data && (
+          <div className="pt-submit">
+            {data.customer?.submitted ? (
+              <>
+                <div>
+                  <b>Your file has been submitted.</b>
+                  <div className="muted" style={{ fontSize: ".85rem" }}>
+                    Our team will come back to you. You can still take it back
+                    to correct something, until someone starts reviewing it.
+                  </div>
+                </div>
+                <button className="btn btn-sm btn-outline-secondary"
+                  onClick={reopen} disabled={busy}>
+                  <i className="fa-solid fa-rotate-left" /> Take it back
+                </button>
+              </>
+            ) : (
+              <>
+                <div>
+                  <b>Not submitted yet.</b>
+                  <div className="muted" style={{ fontSize: ".85rem" }}>
+                    Send it to us when you are ready — you can still add things
+                    afterwards if we have not started.
+                  </div>
+                </div>
+                <button className="btn btn-sm btn-co" onClick={submit} disabled={busy}>
+                  <i className="fa-solid fa-paper-plane" /> Submit my file
+                </button>
+              </>
+            )}
+          </div>
+        )}
 
         {error && <div className="alert alert-danger py-2">{error}</div>}
         {notice && (

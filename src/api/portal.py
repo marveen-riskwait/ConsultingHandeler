@@ -39,6 +39,17 @@ REJECTION_REASONS = {
 }
 
 
+def notify_customer(customer, what="something"):
+    """Email every portal account attached to this customer. Best effort."""
+    from api.integrations import mailer
+    org = customer.organization.name if customer.organization else None
+    results = []
+    for account in User.query.filter_by(customer_id=customer.id,
+                                        is_active=True).all():
+        results.append(mailer.notify_action_needed(account, org, what))
+    return results
+
+
 def portal_user():
     """The signed-in customer account, or 403. Never trusts a customer id from
     the request: the file is the one attached to the account."""
@@ -66,7 +77,7 @@ def portal_customer(customer):
         "customer_type": customer.customer_type,
         "country": customer.country,
         # Where their *submission* stands — not where the review stands.
-        "submitted": customer.status not in ("ONBOARDING",),
+        "submitted": customer.status == "SUBMITTED",
     }
 
 
@@ -272,3 +283,70 @@ def portal_assistant_send(_user):
     convo = _portal_conversation(user, customer)
     reply = assistant_service.ask(convo, user, text, portal=True)
     return jsonify(reply.serialize()), 201
+
+
+# ---------------------------------------------------------------------------
+# Submitting — and taking it back while nobody has started reviewing.
+# ---------------------------------------------------------------------------
+def _open_review_task(customer):
+    from api.models import Task
+    return (Task.query
+            .filter_by(customer_id=customer.id, task_type="KYC_REVIEW")
+            .filter(Task.status == "OPEN").first())
+
+
+def _started_review_task(customer):
+    from api.models import Task
+    return (Task.query
+            .filter_by(customer_id=customer.id, task_type="KYC_REVIEW")
+            .filter(Task.status != "OPEN").first())
+
+
+@portal.route("/kyc-form/submit", methods=["POST"])
+@login_required
+def portal_submit_form(_user):
+    """Hand the file to the team. The questionnaire becomes read-only."""
+    from api.engine.events import emit_event
+    user, customer = portal_user()
+    if customer.status == "SUBMITTED":
+        raise APIException("Your file has already been submitted.",
+                           status_code=409)
+    summary = requirement_engine.summary(customer)
+    customer.status = "SUBMITTED"
+    audit.record("KYC_FORM_SUBMITTED", "customer", customer.id, actor=user,
+                 new_value=f"completeness={summary['completeness_pct']}%",
+                 reason="Submitted by the customer through the portal",
+                 commit=True)
+    emit_event("KYC_FORM_SUBMITTED", customer_id=customer.id, severity="INFO",
+               source="portal", actor=user,
+               payload={"completeness_pct": summary["completeness_pct"]})
+    db.session.commit()
+    return jsonify({"submitted": True,
+                    "customer": portal_customer(customer)}), 200
+
+
+@portal.route("/kyc-form/reopen", methods=["POST"])
+@login_required
+def portal_reopen_form(_user):
+    """Take the submission back to correct something.
+
+    Allowed only while nobody has started reviewing: pulling the file out from
+    under an analyst mid-review would be worse than making the customer ask.
+    The refusal points them at the messages tab rather than leaving them stuck.
+    """
+    user, customer = portal_user()
+    if customer.status != "SUBMITTED":
+        raise APIException("Your file is not submitted.", status_code=409)
+    if _started_review_task(customer) is not None:
+        raise APIException(
+            "Our team has already started reviewing your file, so it can no "
+            "longer be reopened from here. Send us a message and we will "
+            "help you correct it.", status_code=409)
+
+    customer.status = "ONBOARDING"
+    audit.record("KYC_FORM_REOPENED", "customer", customer.id, actor=user,
+                 new_value="ONBOARDING",
+                 reason="Reopened by the customer before review started",
+                 commit=True)
+    return jsonify({"submitted": False,
+                    "customer": portal_customer(customer)}), 200

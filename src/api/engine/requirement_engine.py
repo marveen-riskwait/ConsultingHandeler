@@ -105,6 +105,15 @@ def summary(customer):
     }
 
 
+def _notify_customer_portal(customer):
+    """Best effort: tell the customer something is waiting, nothing more."""
+    try:
+        from api.portal import notify_customer
+        notify_customer(customer, what="some information")
+    except Exception:
+        pass          # a mail problem must never fail a compliance action
+
+
 def request_missing_info(customer, actor=None):
     """Create one information-request task per missing requirement, notify the
     responsible team, and emit MISSING_INFORMATION_DETECTED once."""
@@ -142,4 +151,6 @@ def request_missing_info(customer, actor=None):
     emit_event("MISSING_INFORMATION_DETECTED", customer_id=customer.id,
                severity="MEDIUM", source="requirement_engine", actor=actor,
                payload={"missing": [ri.code for ri in missing]})
+    # The team now has tasks; the customer needs to know something is waiting.
+    _notify_customer_portal(customer)
     return {"created": created, "missing": len(missing)}

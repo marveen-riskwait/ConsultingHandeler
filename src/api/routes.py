@@ -189,6 +189,11 @@ def create_customer(user):
     risk_engine.recompute(customer, actor=user, reason="Initial assessment")
     # Onboarding schedules the initial KYC review.
     review_engine.schedule_initial(customer, actor=user)
+    # And materialises what we will ask for. Requirements used to be computed
+    # lazily, the first time a screen asked — so a customer nobody had opened
+    # yet had none in the database, and anything reading the table directly (a
+    # dashboard, an export, a reminder job) saw an empty file.
+    requirement_engine.evaluate(customer)
     # Auto-enrichment from public sources — async when Celery is up, so bulk
     # onboarding never blocks on external registries.
     if _celery_enabled():
@@ -1745,7 +1750,9 @@ def active_risk_methodology(user):
 
 
 @api.route("/monitoring/run", methods=["POST"])
-@permission_required("management.view")
+# management.view is held by managers only, and the person who actually wants
+# to sweep reviews is the compliance officer — risk.approve is their marker.
+@permission_required("management.view", "risk.approve")
 def run_monitoring(user):
     """Manually trigger the continuous-monitoring sweep (normally on Celery beat)."""
     return jsonify(review_engine.run_monitoring()), 200

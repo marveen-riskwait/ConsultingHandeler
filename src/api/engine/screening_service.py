@@ -118,6 +118,68 @@ def run_screening_for(customer, requested_by=None):
     return run, emitted
 
 
+_OPEN_ALERT_STATUSES = ("OPEN", "ASSIGNED", "IN_REVIEW")
+_CLOSED_CASE_STATUSES = ("CLOSED", "APPROVED", "REJECTED", "ESCALATED")
+
+
+def _close_out_cleared_match(match, user):
+    """Close what a match opened, once it is cleared.
+
+    Everything in the chain fires forwards — a match opens a case and raises an
+    alert — and nothing fired backwards: clearing the match as a false positive
+    left both standing. An analyst then sees an alert for a finding that no
+    longer exists, and a case nobody will decide, and both keep counting
+    towards queues and SLAs.
+
+    Nothing is closed while something is still live: the case closes only when
+    no active match remains on it, and an alert is resolved only when no active
+    match of that kind remains on the customer.
+    """
+    from api.engine import alert_service
+    from api.models import ComplianceAlert
+
+    if match.case_id:
+        still_active = (ScreeningMatch.query
+                        .filter(ScreeningMatch.case_id == match.case_id,
+                                ScreeningMatch.status.in_(ACTIVE_MATCH_STATUSES))
+                        .count())
+        case = Case.query.get(match.case_id)
+        if still_active == 0 and case is not None \
+                and case.status not in _CLOSED_CASE_STATUSES:
+            case.status = "CLOSED"
+            case.decision = case.decision or "NO_ACTION"
+            case.decision_reason = (case.decision_reason
+                                    or "All screening matches on this case were "
+                                       "cleared as false positives.")
+            case.decided_by = user.id if user else None
+            audit.record("CASE_CLOSED", "case", case.id, actor=user,
+                         new_value="CLOSED",
+                         reason="Last active screening match cleared")
+
+    # Alerts carry the event type that raised them, and _EVENT_MAP is the one
+    # source of truth for which event each match kind emits — guessing the
+    # names here is how the sanctions alert stayed open on the first attempt.
+    event_type = _EVENT_MAP.get(match.match_type, (None,))[0]
+    alert_types = (event_type,) if event_type else ()
+    if alert_types:
+        same_kind_active = (ScreeningMatch.query
+                            .filter(ScreeningMatch.customer_id == match.customer_id,
+                                    ScreeningMatch.match_type == match.match_type,
+                                    ScreeningMatch.status.in_(ACTIVE_MATCH_STATUSES))
+                            .count())
+        if same_kind_active == 0:
+            open_alerts = (ComplianceAlert.query
+                           .filter(ComplianceAlert.customer_id == match.customer_id,
+                                   ComplianceAlert.alert_type.in_(alert_types),
+                                   ComplianceAlert.status.in_(_OPEN_ALERT_STATUSES))
+                           .all())
+            for alert in open_alerts:
+                alert_service.resolve(
+                    alert, user,
+                    f"{match.match_type} match cleared as a false positive — "
+                    "no active match of this kind remains.")
+
+
 def review_match(match, decision, reason, user):
     """Record a human decision on a match and re-sync flags + risk.
     decision in FALSE_POSITIVE | CONFIRMED | ESCALATED."""
@@ -131,6 +193,8 @@ def review_match(match, decision, reason, user):
 
     customer = Customer.query.get(match.customer_id)
     recompute_screening_flags(customer)
+    if decision == "FALSE_POSITIVE":
+        _close_out_cleared_match(match, user)
     db.session.commit()
     risk_engine.recompute(customer, actor=user, reason=f"Match {match.id}: {decision}")
     return match

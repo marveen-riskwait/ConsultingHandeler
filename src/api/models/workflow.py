@@ -69,6 +69,10 @@ class Task(db.Model):
     task_type: Mapped[str] = mapped_column(String(80), nullable=False)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     status: Mapped[str] = mapped_column(String(30), default="OPEN")
+    # The requirement this task chases, when it chases one. Matching on the
+    # title worked until a label contained another code; an explicit link is
+    # what lets the task close by itself when the item arrives.
+    requirement_code: Mapped[str] = mapped_column(String(60), nullable=True)
     priority: Mapped[str] = mapped_column(String(20), default="MEDIUM")
     assigned_to: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=True)
     due_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
@@ -82,6 +86,7 @@ class Task(db.Model):
             "task_type": self.task_type,
             "title": self.title,
             "status": self.status,
+            "requirement_code": self.requirement_code,
             "priority": self.priority,
             "assigned_to": self.assigned_to,
             "due_at": self.due_at.isoformat() if self.due_at else None,

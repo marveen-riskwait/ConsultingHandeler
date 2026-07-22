@@ -86,8 +86,43 @@ def evaluate(customer):
             db.session.delete(ri)
 
     db.session.commit()
+    _close_satisfied_requests(customer)
     return (RequirementInstance.query.filter_by(customer_id=customer.id)
             .order_by(RequirementInstance.kind, RequirementInstance.code).all())
+
+
+def _close_satisfied_requests(customer):
+    """Close the information-request tasks whose item has arrived.
+
+    The chain only ever fired forwards: something missing opened a task, and
+    nothing closed it when the customer sent it in. The visible cost is not the
+    stale row — it is an analyst chasing a client who already complied, which
+    is the one mistake a compliance team cannot afford to make twice.
+    """
+    satisfied = {ri.code for ri in
+                 RequirementInstance.query.filter_by(customer_id=customer.id).all()
+                 if ri.status != "MISSING"}
+    if not satisfied:
+        return 0
+
+    open_tasks = (Task.query
+                  .filter_by(customer_id=customer.id,
+                             task_type="INFORMATION_REQUEST")
+                  .filter(Task.status != "DONE").all())
+    closed = 0
+    for task in open_tasks:
+        code = task.requirement_code
+        if code is None:                       # tasks created before the link
+            code = next((c for c in satisfied if f"({c})" in (task.title or "")), None)
+        if code and code in satisfied:
+            task.status = "DONE"
+            audit.record("TASK_COMPLETED", "task", task.id,
+                         new_value="DONE",
+                         reason=f"{code} was provided by the customer")
+            closed += 1
+    if closed:
+        db.session.commit()
+    return closed
 
 
 def summary(customer):
@@ -126,7 +161,8 @@ def request_missing_info(customer, actor=None):
     for ri in missing:
         exists = (Task.query.filter_by(customer_id=customer.id,
                                        task_type="INFORMATION_REQUEST")
-                  .filter(Task.title.like(f"%{ri.code}%"))
+                  .filter(db.or_(Task.requirement_code == ri.code,
+                                 Task.title.like(f"%{ri.code}%")))
                   .filter(Task.status != "DONE").first())
         if exists:
             continue
@@ -134,6 +170,7 @@ def request_missing_info(customer, actor=None):
             customer_id=customer.id,
             task_type="INFORMATION_REQUEST",
             title=f"Request missing: {ri.label} ({ri.code})",
+            requirement_code=ri.code,
             priority="MEDIUM",
             due_at=utcnow() + timedelta(days=10),
         ))

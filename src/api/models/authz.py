@@ -118,7 +118,9 @@ _ANALYST_BASE = [
     "risk.view", "risk.calculate",
     "case.view", "case.create", "case.update",
     "task.view", "task.create", "task.complete",
-    "document.view", "document.upload",
+    # Reading a passport scan and sending back a blurry one is first-line
+    # work; approving the customer stays with the officer (kyc.approve).
+    "document.view", "document.upload", "document.verify",
     "workflow.view", "workflow.execute", "rule.view",
 ]
 

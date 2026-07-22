@@ -69,7 +69,7 @@ def has_permission(user, code):
 # refused — including endpoints written next year by someone who never thought
 # about portal users.
 PORTAL_SHARED_ENDPOINTS = {
-    "api.me",
+    "api.me", "api.logout",
     # Messaging: rooms are already gated by membership, and the customer room
     # is the intended channel to the firm.
     "api.list_chat_rooms", "api.list_chat_messages", "api.post_chat_message",

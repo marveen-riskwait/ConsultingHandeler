@@ -71,6 +71,14 @@ app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY") or os.getenv(
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=12)
 jwt = JWTManager(app)
 
+
+@jwt.token_in_blocklist_loader
+def _token_revoked(jwt_header, jwt_payload):
+    """Refuse a token whose jti has been revoked (logout). Runs on every
+    @jwt_required request — one indexed lookup by jti."""
+    from api.models.security import is_revoked
+    return is_revoked(jwt_payload.get("jti"))
+
 # Real-time layer (team chat + call signalling). Threading mode: works under
 # the dev server and gunicorn threads; simple-websocket upgrades to real WS.
 socketio.init_app(app, cors_allowed_origins="*", async_mode="threading")

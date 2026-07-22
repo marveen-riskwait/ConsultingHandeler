@@ -263,7 +263,10 @@ export const Portal = () => {
     catch (e) { notify(e.message, true); }
     finally { setBusy(false); }
   };
-  const logout = () => { resetSocket(); dispatch({ type: "logout" }); };
+  const logout = () => {
+    api.logout().catch(() => {});
+    resetSocket(); dispatch({ type: "logout" });
+  };
 
   const tabs = [
     ["details", "My information", "fa-user-pen"],

@@ -31,6 +31,7 @@ export const api = {
   login: (email, password) => request("/auth/login", { method: "POST", body: { email, password } }),
   register: (payload) => request("/auth/register", { method: "POST", body: payload }),
   me: () => request("/auth/me"),
+  logout: () => request("/auth/logout", { method: "POST" }),
 
   // customers
   customers: (archived) => request(`/customers${archived ? "?archived=1" : ""}`),

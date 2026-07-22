@@ -56,7 +56,12 @@ export const Layout = () => {
     return <ScrollToTop><Portal /></ScrollToTop>;
   }
 
-  const logout = () => { resetSocket(); dispatch({ type: "logout" }); navigate("/"); };
+  const logout = () => {
+    // Revoke the token server-side, then forget it locally. Fire-and-forget:
+    // a network hiccup must not trap the user in a session they asked to end.
+    api.logout().catch(() => {});
+    resetSocket(); dispatch({ type: "logout" }); navigate("/");
+  };
   const initials = (store.user?.full_name || store.user?.email || "?")
     .split(" ").map((s) => s[0]).join("").slice(0, 2).toUpperCase();
 

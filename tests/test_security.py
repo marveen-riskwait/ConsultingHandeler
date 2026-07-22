@@ -121,3 +121,79 @@ def test_failed_and_successful_logins_are_audited(client, tokens):
     rows = entries if isinstance(entries, list) else entries.get("items", [])
     actions = {e.get("action") for e in rows}
     assert "LOGIN_FAILED" in actions and "LOGIN_OK" in actions
+
+
+def test_logout_revokes_the_token_it_was_called_with(client, tokens):
+    """The difference between "forgotten" and "revoked": after logout the very
+    same token no longer works, even though it has not expired."""
+    to = tokens["officer@test.io"]
+    # Works before logout.
+    assert client.get("/api/auth/me", headers=auth(to)).status_code == 200
+
+    r = client.post("/api/auth/logout", headers=auth(to))
+    assert r.status_code == 200
+
+    # The same token is now refused everywhere.
+    assert client.get("/api/auth/me", headers=auth(to)).status_code == 401
+    assert client.get("/api/customers", headers=auth(to)).status_code == 401
+
+
+def test_logout_only_kills_that_token_not_the_account(client, tokens, app):
+    """Logging out one session must not lock the account out of a fresh login."""
+    from api.models import User
+    from api.auth import make_token
+
+    to = tokens["manager@test.io"]
+    client.post("/api/auth/logout", headers=auth(to))
+    assert client.get("/api/auth/me", headers=auth(to)).status_code == 401
+
+    with app.app_context():
+        u = User.query.filter_by(email="manager@test.io").first()
+        fresh = make_token(u)
+    assert client.get("/api/auth/me", headers=auth(fresh)).status_code == 200
+
+
+def test_a_disabled_account_is_cut_off_immediately(client, tokens, app):
+    """Disabling a user must end their live session at once — not in 12 hours."""
+    from api.models import db, User
+    to = tokens["analyst@test.io"]
+    assert client.get("/api/auth/me", headers=auth(to)).status_code == 200
+
+    with app.app_context():
+        u = User.query.filter_by(email="analyst@test.io").first()
+        u.is_active = False
+        db.session.commit()
+
+    assert client.get("/api/auth/me", headers=auth(to)).status_code == 401
+
+    with app.app_context():   # restore for other tests in the module
+        u = User.query.filter_by(email="analyst@test.io").first()
+        u.is_active = True
+        db.session.commit()
+
+
+def test_logout_is_audited(client, tokens):
+    to = tokens["officer@test.io"]
+    client.post("/api/auth/logout", headers=auth(to))
+    # a fresh admin token to read the trail
+    admin = tokens["admin@test.io"]
+    entries = client.get("/api/audit?entity_type=user", headers=auth(admin)).get_json()
+    rows = entries if isinstance(entries, list) else entries.get("items", [])
+    assert "LOGOUT" in {e.get("action") for e in rows}
+
+
+def test_a_portal_user_can_log_out(client, tokens, app):
+    from api.models import db, User, Customer
+    from api.auth import hash_password, make_token
+    from api.rbac import get_role
+    with app.app_context():
+        c = Customer.query.filter_by(name="Marie Dupont").first()
+        role = get_role("CUSTOMER_USER")
+        u = User(email="logout-client@test.io", full_name="Client",
+                 role="CUSTOMER_USER", role_id=role.id if role else None,
+                 password=hash_password("pw"), organization_id=c.organization_id,
+                 customer_id=c.id, is_active=True)
+        db.session.add(u); db.session.commit()
+        token = make_token(u)
+    assert client.post("/api/auth/logout", headers=auth(token)).status_code == 200
+    assert client.get("/api/portal/me", headers=auth(token)).status_code == 401

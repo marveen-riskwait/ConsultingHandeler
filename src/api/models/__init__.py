@@ -21,6 +21,7 @@ from api.models.tenancy import (
     Department, Team, OrganizationMembership, TeamMembership, AccessPolicy,
     MEMBERSHIP_STATUSES, TEAM_ROLES, SCOPE_TYPES,
 )
+from api.models.security import RevokedToken  # noqa: F401
 from api.models.invitations import Invitation, INVITATION_STATUSES
 from api.models.management import (
     AssignmentRule, SLAConfiguration, ASSIGNMENT_STRATEGIES,
@@ -79,7 +80,7 @@ __all__ = [
     "Organization", "User", "ROLES",
     "Department", "Team", "OrganizationMembership", "TeamMembership", "AccessPolicy",
     "MEMBERSHIP_STATUSES", "TEAM_ROLES", "SCOPE_TYPES",
-    "Invitation", "INVITATION_STATUSES",
+    "Invitation", "RevokedToken", "INVITATION_STATUSES",
     "AssignmentRule", "SLAConfiguration", "ASSIGNMENT_STRATEGIES",
     "ProfileField", "RequirementDefinition", "RequirementInstance",
     "FIELD_CATEGORIES", "REQUIREMENT_KINDS", "REQUIREMENT_STATUSES", "RISK_RANK",

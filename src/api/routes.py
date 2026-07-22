@@ -170,6 +170,24 @@ def login():
     return jsonify({"token": make_token(user), "user": user.serialize()}), 200
 
 
+@api.route("/auth/logout", methods=["POST"])
+@login_required
+def logout(user):
+    """Real logout: revoke THIS token so it cannot be used again, even if it
+    was copied elsewhere. The client also forgets it, but the server no longer
+    honours it either — the difference between "forgotten" and "revoked"."""
+    from flask_jwt_extended import get_jwt
+    from datetime import datetime, timezone
+    from api.models.security import revoke
+    claims = get_jwt()
+    exp = claims.get("exp")
+    expires_at = (datetime.fromtimestamp(exp, tz=timezone.utc).replace(tzinfo=None)
+                  if exp else None)
+    revoke(claims.get("jti"), user_id=user.id, expires_at=expires_at)
+    audit.record("LOGOUT", "user", user.id, actor=user, commit=True)
+    return jsonify({"ok": True}), 200
+
+
 @api.route("/auth/me", methods=["GET"])
 @login_required
 def me(user):

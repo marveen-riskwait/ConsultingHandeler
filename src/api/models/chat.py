@@ -86,6 +86,13 @@ class ChatMember(db.Model):
         }
 
 
+def _sign_media(url):
+    if not url:
+        return url
+    from api.integrations import media
+    return media.sign_url(url)
+
+
 class ChatMessage(db.Model):
     __tablename__ = "chat_message"
 
@@ -120,7 +127,7 @@ class ChatMessage(db.Model):
             "organization_name": org.name if org is not None else None,
             "kind": self.kind,
             "body": self.body,
-            "media_url": self.media_url,
+            "media_url": _sign_media(self.media_url),
             "media_type": self.media_type,
             "meta": self.meta or {},
             "created_at": self.created_at.isoformat() if self.created_at else None,

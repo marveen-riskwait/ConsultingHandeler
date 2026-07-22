@@ -91,6 +91,14 @@ class Customer(db.Model):
         }
 
 
+def _sign(url):
+    """Mint a short-lived signed media URL for an outgoing file link."""
+    if not url:
+        return url
+    from api.integrations import media
+    return media.sign_url(url)
+
+
 class Document(db.Model):
     __tablename__ = "document"
 
@@ -125,7 +133,7 @@ class Document(db.Model):
             "doc_type": self.doc_type,
             "status": self.status,
             "expiry_date": self.expiry_date.isoformat() if self.expiry_date else None,
-            "file_url": self.file_url,
+            "file_url": _sign(self.file_url),
             "file_name": self.file_name,
             "media_type": self.media_type,
             "file_size": self.file_size,

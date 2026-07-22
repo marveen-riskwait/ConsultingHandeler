@@ -71,3 +71,62 @@ def store(file_storage):
                      "stored locally. Check CLOUDINARY_URL in .env.")
 
     return _store_local(file_storage, mimetype, kind)
+
+
+# --- signed access -----------------------------------------------------------
+# The media route is not public: a file is reachable only through a short-lived
+# signed URL. The signature travels in the query string, so it works with
+# <img src> / <iframe src> (which cannot carry an Authorization header) — and
+# it is precisely how object stores like Cloudflare R2 presign URLs, so moving
+# there later changes the backend, not this contract.
+import hashlib
+import hmac
+import time
+
+SIGNED_URL_TTL = int(os.getenv("MEDIA_URL_TTL", "600"))  # seconds
+
+
+def _secret():
+    return (os.getenv("JWT_SECRET_KEY") or os.getenv("FLASK_APP_KEY")
+            or "change-me-in-production").encode()
+
+
+def _key_of(url):
+    """The storage key behind a /api/media/<key> path (ignores any query)."""
+    path = (url or "").split("?", 1)[0]
+    return path.rsplit("/", 1)[-1]
+
+
+def sign_url(url, ttl=None):
+    """Turn a stored /api/media/<key> path into a time-limited signed URL.
+
+    Called by serializers when handing a file to an already-authorized user, so
+    the link they receive is a short-lived bearer token to that one file.
+    """
+    if not url or "/api/media/" not in url:
+        return url
+    key = _key_of(url)
+    exp = int(time.time()) + (ttl or SIGNED_URL_TTL)
+    sig = hmac.new(_secret(), f"{key}:{exp}".encode(),
+                   hashlib.sha256).hexdigest()[:32]
+    return f"/api/media/{key}?exp={exp}&sig={sig}"
+
+
+def verify_signed(key, exp, sig):
+    """True if <key> may be served: signature valid and not expired."""
+    try:
+        exp = int(exp or 0)
+    except (TypeError, ValueError):
+        return False
+    if exp < int(time.time()):
+        return False
+    expected = hmac.new(_secret(), f"{key}:{exp}".encode(),
+                        hashlib.sha256).hexdigest()[:32]
+    return hmac.compare_digest(expected, sig or "")
+
+
+def open_local(key):
+    """Path to a locally-stored key, or None. The R2/S3 backend will stream
+    from the bucket instead — same caller, different source."""
+    path = os.path.join(UPLOADS_DIR, key)
+    return path if os.path.isfile(path) else None

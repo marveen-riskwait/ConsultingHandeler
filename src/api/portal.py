@@ -56,6 +56,13 @@ def notify_customer(customer, what="something"):
     return results
 
 
+def _sign(url):
+    if not url:
+        return url
+    from api.integrations import media
+    return media.sign_url(url)
+
+
 def portal_user():
     """The signed-in customer account, or 403. Never trusts a customer id from
     the request: the file is the one attached to the account."""
@@ -94,6 +101,7 @@ def portal_document(doc):
         "file_name": doc.file_name,
         "file_size": doc.file_size,
         "media_type": doc.media_type,
+        "file_url": _sign(doc.file_url),
         "description": doc.description,
         "uploaded_at": doc.created_at.isoformat() if doc.created_at else None,
         # ACCEPTED / RECEIVED / RETURNED — never the internal VERIFIED wording,

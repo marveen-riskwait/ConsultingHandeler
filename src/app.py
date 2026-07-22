@@ -133,7 +133,19 @@ def sitemap():
 # random UUIDs, which is what makes the unauthenticated GET acceptable.
 @app.route('/api/media/<path:name>', methods=['GET'])
 def serve_chat_media(name):
-    return send_from_directory(UPLOADS_DIR, name)
+    # Not public. A file is served only through a short-lived signed URL, which
+    # serializers mint for users already authorized to see it. The signature is
+    # in the query string so <img src>/<iframe src> work without an auth header
+    # — the same contract R2 presigned URLs use. Unsigned or expired -> denied.
+    from api.integrations import media
+    from flask import request as _rq, abort
+    key = media._key_of(name)
+    if not media.verify_signed(key, _rq.args.get('exp'), _rq.args.get('sig')):
+        abort(403)
+    path = media.open_local(key)
+    if path is None:
+        abort(404)
+    return send_from_directory(UPLOADS_DIR, key)
 
 
 # any other endpoint will try to serve it like a static file

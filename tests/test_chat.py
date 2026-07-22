@@ -102,8 +102,10 @@ def test_upload_local_fallback_and_media_message(client, tokens, app):
                           "media_type": stored["media_type"]})
     assert r.status_code == 201 and r.get_json()["kind"] == "AUDIO"
 
-    # The stored file is actually served.
-    got = client.get(stored["url"])
+    # The raw path is not public anymore; a signed URL serves it.
+    from api.integrations import media
+    assert client.get(stored["url"]).status_code == 403
+    got = client.get(media.sign_url(stored["url"]))
     assert got.status_code == 200 and got.data == b"fake-voice-note"
 
 
@@ -126,8 +128,9 @@ def test_upload_falls_back_to_local_when_cloudinary_broken(client, tokens,
     stored = r.get_json()
     assert stored["provider"] == "local"
     assert "Cloudinary failed" in stored.get("note", "")
-    # The fallback file is intact and served.
-    got = client.get(stored["url"])
+    # The fallback file is intact and served through a signed URL.
+    from api.integrations import media
+    got = client.get(media.sign_url(stored["url"]))
     assert got.status_code == 200 and got.data == b"pdf-bytes"
 
 

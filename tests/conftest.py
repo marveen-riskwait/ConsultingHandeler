@@ -19,6 +19,7 @@ os.environ.pop("REDIS_URL", None)
 # init_app, before any fixture can override the config — so it has to be right
 # here, at import time.
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+os.environ["RATELIMIT_ENABLED"] = "false"   # limiter binds at import; keep it off under test
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
 
 # Same reason: a developer's real AI keys in .env would make the Copilot tests

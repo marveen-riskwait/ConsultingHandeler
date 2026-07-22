@@ -5,7 +5,7 @@ now flows through `role_obj` -> permissions (see api.models.authz).
 """
 from datetime import datetime
 
-from sqlalchemy import String, Boolean, DateTime, ForeignKey
+from sqlalchemy import String, Boolean, Integer, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from api.models.base import db, utcnow
@@ -43,6 +43,11 @@ class User(db.Model):
     full_name: Mapped[str] = mapped_column(String(120), nullable=True)
     role: Mapped[str] = mapped_column(String(40), nullable=False, default="KYC_ANALYST")
     is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=True)
+    # Brute-force defence: consecutive failed logins, and a lock that lifts
+    # itself after a cooldown so a locked-out real user is not stranded.
+    failed_logins: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    locked_until: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    last_login_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
 
     organization_id: Mapped[int] = mapped_column(ForeignKey("organization.id"), nullable=False)
     organization: Mapped["Organization"] = relationship(back_populates="users")

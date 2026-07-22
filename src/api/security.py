@@ -81,3 +81,31 @@ def password_problem(password):
     if classes < 2:
         return ("Password must mix at least two of: letters, digits, symbols.")
     return None
+
+
+# --- brute-force lockout -----------------------------------------------------
+# After this many consecutive failures the account is locked for the cooldown.
+# Rate limiting (below) throttles the attempt volume; the lockout stops a slow
+# drip against one account.
+MAX_FAILED_LOGINS = 5
+LOCKOUT_MINUTES = 15
+
+
+def register_rate_limits(app):
+    """Attach Flask-Limiter. In-memory by default (fine for one process);
+    point RATELIMIT_STORAGE_URI at Redis for multi-worker production."""
+    from flask_limiter import Limiter
+    from flask_limiter.util import get_remote_address
+
+    limiter = Limiter(
+        key_func=get_remote_address,
+        app=app,
+        default_limits=[os.getenv("RATELIMIT_DEFAULT", "300 per minute")],
+        storage_uri=os.getenv("RATELIMIT_STORAGE_URI", "memory://"),
+        headers_enabled=True,
+        # Off in the test suite (RATELIMIT_ENABLED=false): the limiter binds at
+        # import time, before app.config[TESTING] exists, and would otherwise
+        # count every module's logins against one client address.
+        enabled=os.getenv("RATELIMIT_ENABLED", "true").lower() != "false",
+    )
+    return limiter

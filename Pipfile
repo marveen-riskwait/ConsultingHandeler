@@ -24,6 +24,7 @@ anthropic = "*"
 flask-socketio = "*"
 simple-websocket = "*"
 segno = "*"
+flask-limiter = "*"
 
 [dev-packages]
 pytest = "*"

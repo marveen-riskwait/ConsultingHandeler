@@ -71,3 +71,53 @@ def test_cors_is_closed_by_default_in_production(monkeypatch):
     monkeypatch.setenv("FLASK_DEBUG", "1")
     monkeypatch.delenv("CORS_ORIGINS", raising=False)
     assert security.cors_origins() == "*"              # dev convenience
+
+
+def test_account_locks_after_repeated_failures(client, tokens, app):
+    """Rate limiting throttles volume; the account lockout stops a slow drip
+    against one login. Five wrong passwords lock it, and the right password is
+    then refused too — indistinguishably, so the attacker learns nothing."""
+    from api.security import MAX_FAILED_LOGINS
+    from api.models import User
+
+    for _ in range(MAX_FAILED_LOGINS):
+        r = client.post("/api/auth/login",
+                        json={"email": "officer@test.io", "password": "wrong-one!!"})
+        assert r.status_code == 401
+
+    with app.app_context():
+        u = User.query.filter_by(email="officer@test.io").first()
+        assert u.locked_until is not None, "account should be locked"
+
+    # Even the correct password is refused while locked, with the same message.
+    r = client.post("/api/auth/login",
+                    json={"email": "officer@test.io", "password": "pw"})
+    assert r.status_code == 401
+    assert r.get_json()["message"] == "Invalid credentials"
+
+
+def test_a_good_login_clears_the_counter_and_stamps_last_login(client, tokens, app):
+    from api.models import User
+    # a couple of misses, then success resets everything
+    for _ in range(2):
+        client.post("/api/auth/login",
+                    json={"email": "analyst@test.io", "password": "nope-nope-1!"})
+    r = client.post("/api/auth/login",
+                    json={"email": "analyst@test.io", "password": "pw"})
+    assert r.status_code == 200
+    with app.app_context():
+        u = User.query.filter_by(email="analyst@test.io").first()
+        assert u.failed_logins == 0 and u.locked_until is None
+        assert u.last_login_at is not None
+
+
+def test_failed_and_successful_logins_are_audited(client, tokens):
+    client.post("/api/auth/login",
+                json={"email": "manager@test.io", "password": "definitely-wrong-1!"})
+    client.post("/api/auth/login",
+                json={"email": "manager@test.io", "password": "pw"})
+    to = tokens["admin@test.io"]
+    entries = client.get("/api/audit?entity_type=user", headers=auth(to)).get_json()
+    rows = entries if isinstance(entries, list) else entries.get("items", [])
+    actions = {e.get("action") for e in rows}
+    assert "LOGIN_FAILED" in actions and "LOGIN_OK" in actions

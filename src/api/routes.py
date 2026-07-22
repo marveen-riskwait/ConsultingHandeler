@@ -41,6 +41,15 @@ from api.engine.screening_service import review_match
 from api.tasks import run_screening
 
 api = Blueprint("api", __name__)
+
+
+def _rate_limit(*rules):
+    """Per-route rate limit that no-ops until the limiter is attached in app.py
+    (import order), and stays inert under TESTING so the suite isn't throttled."""
+    def decorator(fn):
+        fn._rate_rules = rules
+        return fn
+    return decorator
 from api.security import cors_origins
 CORS(api, origins=cors_origins(), supports_credentials=True)
 
@@ -70,6 +79,7 @@ def _get_customer_for(user, customer_id):
 # Auth
 # ---------------------------------------------------------------------------
 @api.route("/auth/register", methods=["POST"])
+@_rate_limit("5 per minute", "20 per hour")
 def register():
     body = request.get_json(silent=True) or {}
     email = (body.get("email") or "").strip().lower()
@@ -122,15 +132,41 @@ def register():
 
 
 @api.route("/auth/login", methods=["POST"])
+@_rate_limit("10 per minute", "50 per hour")
 def login():
+    from api.security import MAX_FAILED_LOGINS, LOCKOUT_MINUTES
     body = request.get_json(silent=True) or {}
     email = (body.get("email") or "").strip().lower()
     password = body.get("password") or ""
     user = User.query.filter_by(email=email).first()
-    if user is None or not verify_password(user, password):
+
+    # One generic failure for every reason — unknown user, wrong password,
+    # disabled, locked — so an attacker learns nothing about which accounts
+    # exist or why a login failed. The specifics live in the audit trail.
+    def _fail():
+        audit.record("LOGIN_FAILED", "user",
+                     user.id if user else None, actor_label=email,
+                     new_value="invalid", commit=True)
         raise APIException("Invalid credentials", status_code=401)
-    if not user.is_active:
-        raise APIException("This account has been disabled", status_code=401)
+
+    if user is None:
+        _fail()
+    if user.locked_until and user.locked_until > utcnow():
+        _fail()
+    if not user.is_active or not verify_password(user, password):
+        user.failed_logins = (user.failed_logins or 0) + 1
+        if user.failed_logins >= MAX_FAILED_LOGINS:
+            user.locked_until = utcnow() + timedelta(minutes=LOCKOUT_MINUTES)
+            audit.record("ACCOUNT_LOCKED", "user", user.id, actor_label=email,
+                         new_value=f"{LOCKOUT_MINUTES}m after "
+                                   f"{user.failed_logins} failed attempts")
+        db.session.commit()
+        _fail()
+
+    user.failed_logins = 0
+    user.locked_until = None
+    user.last_login_at = utcnow()
+    audit.record("LOGIN_OK", "user", user.id, actor=user, commit=True)
     return jsonify({"token": make_token(user), "user": user.serialize()}), 200
 
 
@@ -1058,6 +1094,7 @@ def revoke_invitation(user, inv_id):
 
 
 @api.route("/auth/accept-invitation", methods=["POST"])
+@_rate_limit("10 per minute")
 def accept_invitation():
     """Public endpoint: turn a valid invitation token into an account."""
     body = request.get_json(silent=True) or {}
@@ -1486,6 +1523,7 @@ def verify_customer(user, cid):
 
 
 @api.route("/webhooks/providers/<provider_name>", methods=["POST"])
+@_rate_limit("60 per minute")
 def provider_webhook(provider_name):
     """Public, signature-verified, idempotent provider webhook ingestion."""
     raw_body = request.get_data() or b""

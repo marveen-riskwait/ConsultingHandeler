@@ -84,10 +84,34 @@ setup_commands(app)
 # Keep the grantable permission catalog in step with the code.
 sync_permission_catalog()
 
+# Reject oversized bodies before they are read into memory (DoS floor). The
+# per-request cap covers document and media uploads.
+app.config["MAX_CONTENT_LENGTH"] = int(
+    os.getenv("MAX_UPLOAD_MB", "25")) * 1024 * 1024
+
+# Rate limiting: throttles brute force and scraping. Sensitive auth endpoints
+# get tighter per-route limits, declared in routes.py.
+from api.security import register_rate_limits
+limiter = register_rate_limits(app)
+
 # Add all endpoints form the API with a "api" prefix
 app.register_blueprint(api, url_prefix='/api')
 # The customer portal is its own surface: see api/portal.py.
 app.register_blueprint(portal, url_prefix='/api/portal')
+
+# Apply the per-route rate limits declared with @_rate_limit. Skipped under
+# TESTING so the suite is not throttled.
+if not app.config.get("TESTING"):
+    for _endpoint, _view in list(app.view_functions.items()):
+        _rules = getattr(_view, "_rate_rules", ())
+        if not _rules:
+            continue
+        # limiter.limit() returns a wrapped view; it must REPLACE the one Flask
+        # dispatches, or the limit is registered against a function nobody calls.
+        _wrapped = _view
+        for _limit in _rules:
+            _wrapped = limiter.limit(_limit)(_wrapped)
+        app.view_functions[_endpoint] = _wrapped
 
 # Handle/serialize errors like a JSON object
 

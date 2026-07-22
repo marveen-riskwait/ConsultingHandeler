@@ -52,8 +52,10 @@ def test_portal_user_cannot_dm_anyone(client, portal):
     for target in ("analyst_id", "officer_id"):
         r = client.post("/api/chat/rooms", headers=auth(portal["token"]),
                         json={"user_id": portal[target]})
+        # Refused at the portal boundary now — before the directory logic even
+        # runs, which is a stronger place to say no than inside it.
         assert r.status_code == 403
-        assert "not allowed" in r.get_json()["message"].lower()
+        assert "portal accounts" in r.get_json()["message"].lower()
 
 
 def test_portal_user_gets_their_customer_room_without_creating_anything(client, portal):

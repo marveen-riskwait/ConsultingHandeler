@@ -112,6 +112,11 @@ class Document(db.Model):
     file_size: Mapped[int] = mapped_column(Integer, nullable=True)
     uploaded_by_id: Mapped[int] = mapped_column(
         ForeignKey("user.id"), nullable=True)
+    # What the customer says this document is, in their own words.
+    description: Mapped[str] = mapped_column(String(500), nullable=True)
+    # Why it was sent back. Shown to the customer, so it must never carry the
+    # reason a document *mattered* — only what is wrong with the document.
+    rejection_reason: Mapped[str] = mapped_column(String(300), nullable=True)
 
     def serialize(self):
         return {
@@ -125,6 +130,8 @@ class Document(db.Model):
             "media_type": self.media_type,
             "file_size": self.file_size,
             "has_file": bool(self.file_url),
+            "description": self.description,
+            "rejection_reason": self.rejection_reason,
             "uploaded_at": self.created_at.isoformat() if self.created_at else None,
         }
 

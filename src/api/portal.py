@@ -1,0 +1,226 @@
+"""The customer portal — everything a client may see, and nothing else.
+
+Separate blueprint on purpose. The staff API answers "what is this customer?"
+with the firm's analysis attached: risk score, screening matches, PEP and
+adverse-media flags, cases, alerts, reviews. None of that may reach the client,
+and not only for privacy: telling a customer they are flagged can amount to
+unlawful disclosure ("tipping off") under the AML directives.
+
+Relying on portal accounts merely lacking permissions did not work — they
+legitimately need kyc.view to fill their own questionnaire, and that opened the
+whole customer file. So this is an allowlist: portal accounts may call this
+blueprint (plus messaging), every route here is scoped to their own customer by
+construction rather than by a parameter, and responses are built by
+`portal_customer()`, which cannot emit a risk field because it never reads one.
+
+What the client gets: their own declared answers, the documents expected from
+them, what they have sent and its state, their submission progress, and the
+conversation with the firm. What they never get: the assessment.
+"""
+from flask import Blueprint, request, jsonify
+
+from api.models import db, Customer, Document, ProfileField, User, utcnow
+from api.utils import APIException
+from api.auth import login_required
+from api.engine import audit, requirement_engine, kyc_service
+
+portal = Blueprint("portal", __name__)
+
+# Reasons an analyst may return a document with. Closed list first, because a
+# free-text reason is where an accidental disclosure would happen; the analyst
+# may still write one when none of these fit (their call, they know the file).
+REJECTION_REASONS = {
+    "UNREADABLE": "The document is not readable — please send a clearer copy.",
+    "EXPIRED": "The document has expired — please send a current one.",
+    "INCOMPLETE": "Some pages are missing — please send the complete document.",
+    "WRONG_TYPE": "This is not the type of document we asked for.",
+    "NAME_MISMATCH": "The name on the document does not match your file.",
+    "TOO_OLD": "The document is older than we can accept — please send a recent one.",
+}
+
+
+def portal_user():
+    """The signed-in customer account, or 403. Never trusts a customer id from
+    the request: the file is the one attached to the account."""
+    from api.auth import current_user
+    user = current_user()
+    if not user.is_portal_user() or not user.customer_id:
+        raise APIException("Customer portal accounts only", status_code=403)
+    customer = Customer.query.get(user.customer_id)
+    if customer is None:
+        raise APIException("No customer file attached to this account",
+                           status_code=404)
+    return user, customer
+
+
+def portal_customer(customer):
+    """The client's view of their own file — declared identity only.
+
+    Deliberately built from an explicit list. A serializer that filtered a
+    dict would leak every field added later; this one can only ever emit what
+    is written here.
+    """
+    return {
+        "id": customer.id,
+        "name": customer.name,
+        "customer_type": customer.customer_type,
+        "country": customer.country,
+        # Where their *submission* stands — not where the review stands.
+        "submitted": customer.status not in ("ONBOARDING",),
+    }
+
+
+def portal_document(doc):
+    return {
+        "id": doc.id,
+        "doc_type": doc.doc_type,
+        "file_name": doc.file_name,
+        "file_size": doc.file_size,
+        "media_type": doc.media_type,
+        "description": doc.description,
+        "uploaded_at": doc.created_at.isoformat() if doc.created_at else None,
+        # ACCEPTED / RECEIVED / RETURNED — never the internal VERIFIED wording,
+        # and never why a document mattered.
+        "state": ("RETURNED" if doc.rejection_reason
+                  else "ACCEPTED" if doc.status == "VERIFIED" else "RECEIVED"),
+        "returned_reason": doc.rejection_reason,
+    }
+
+
+def _progress(customer):
+    """How much of what we asked for has arrived. Counts requested items, not
+    compliance completeness — the client sees their own to-do list."""
+    summary = requirement_engine.summary(customer)
+    items = summary.get("requirements", [])
+    outstanding = [r for r in items if r.get("status") == "MISSING"]
+    return {
+        "requested": len(items),
+        "provided": len(items) - len(outstanding),
+        "outstanding": [{"code": r["code"], "label": r["label"],
+                         "kind": r.get("kind")} for r in outstanding],
+    }
+
+
+@portal.route("/me", methods=["GET"])
+@login_required
+def portal_me(_user):
+    user, customer = portal_user()
+    return jsonify({
+        "user": {"id": user.id, "full_name": user.full_name, "email": user.email},
+        "organization": (user.organization.name if user.organization else None),
+        "customer": portal_customer(customer),
+        "progress": _progress(customer),
+    }), 200
+
+
+@portal.route("/kyc-form", methods=["GET"])
+@login_required
+def portal_get_form(_user):
+    """Their questionnaire: the questions, their own answers, their documents."""
+    from api import kyc_form
+    from api.models import RISK_RANK
+    _u, customer = portal_user()
+    # The schema widens with risk (EDD sections). Asking those questions is
+    # legitimate enhanced due diligence; exposing the rating that triggered
+    # them is not — so the rank drives the schema and never leaves the server.
+    rank = RISK_RANK.get(customer.risk_level, 0)
+    schema = kyc_form.schema_for(customer.customer_type, rank)
+    fields = ProfileField.query.filter_by(customer_id=customer.id).all()
+    docs = Document.query.filter_by(customer_id=customer.id).all()
+    return jsonify({
+        **schema,
+        "customer": portal_customer(customer),
+        # `verified` is the firm's judgement on the answer — not shown.
+        "values": {f.field_key: {"value": f.value} for f in fields},
+        "documents": [portal_document(d) for d in docs],
+        "progress": _progress(customer),
+    }), 200
+
+
+@portal.route("/kyc-form", methods=["POST"])
+@login_required
+def portal_save_form(_user):
+    from api import kyc_form
+    user, customer = portal_user()
+    body = request.get_json(silent=True) or {}
+    answers = body.get("fields") or {}
+    index = kyc_form.field_index()
+    saved = 0
+    for key, value in answers.items():
+        if key not in index:
+            continue
+        if kyc_service.set_field(customer, key, value, source="portal",
+                                 actor=user):
+            saved += 1
+    db.session.commit()
+    requirement_engine.evaluate(customer)
+    db.session.commit()
+    return jsonify({"saved": saved, "progress": _progress(customer)}), 200
+
+
+@portal.route("/documents", methods=["GET"])
+@login_required
+def portal_documents(_user):
+    _u, customer = portal_user()
+    docs = Document.query.filter_by(customer_id=customer.id).all()
+    return jsonify([portal_document(d) for d in docs]), 200
+
+
+@portal.route("/documents", methods=["POST"])
+@login_required
+def portal_upload_document(_user):
+    """Send a document and say what it is, in the client's own words."""
+    from api.integrations import media
+    user, customer = portal_user()
+    upload = request.files.get("file")
+    if upload is None or not upload.filename:
+        raise APIException("A file is required", status_code=400)
+    doc_type = (request.form.get("doc_type") or "OTHER").strip()
+    description = (request.form.get("description") or "").strip()[:500]
+
+    stored = media.store(upload)
+    doc = Document(customer_id=customer.id, doc_type=doc_type,
+                   status="PENDING", uploaded_by_id=user.id,
+                   file_url=stored["url"], file_name=upload.filename[:255],
+                   media_type=stored["media_type"], description=description or None)
+    try:
+        doc.file_size = upload.stream.tell() or None
+    except Exception:
+        doc.file_size = None
+    db.session.add(doc)
+    audit.record("DOCUMENT_ADDED", "document", None, actor=user,
+                 new_value=f"{doc_type} · {doc.file_name}",
+                 reason="Uploaded by the customer through the portal")
+    db.session.commit()
+    requirement_engine.evaluate(customer)
+    db.session.commit()
+    return jsonify(portal_document(doc)), 201
+
+
+@portal.route("/documents/<int:did>", methods=["DELETE"])
+@login_required
+def portal_delete_document(_user, did):
+    """Withdraw a document sent by mistake — only while it is still pending."""
+    user, customer = portal_user()
+    doc = Document.query.filter_by(id=did, customer_id=customer.id).first()
+    if doc is None:
+        raise APIException("Document not found", status_code=404)
+    if doc.status == "VERIFIED":
+        raise APIException("This document has already been accepted and cannot "
+                           "be withdrawn.", status_code=409)
+    audit.record("DOCUMENT_REMOVED", "document", doc.id, actor=user,
+                 old_value=f"{doc.doc_type} · {doc.file_name or 'no file'}",
+                 reason="Withdrawn by the customer")
+    db.session.delete(doc)
+    db.session.commit()
+    requirement_engine.evaluate(customer)
+    db.session.commit()
+    return jsonify({"deleted": True}), 200
+
+
+@portal.route("/rejection-reasons", methods=["GET"])
+@login_required
+def portal_rejection_reasons(_user):
+    """Shared with the staff UI so both sides use the same wording."""
+    return jsonify([{"code": c, "message": m}
+                    for c, m in REJECTION_REASONS.items()]), 200

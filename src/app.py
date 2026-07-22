@@ -10,6 +10,7 @@ from flask_jwt_extended import JWTManager
 from api.utils import APIException, generate_sitemap
 from api.models import db
 from api.routes import api
+from api.portal import portal
 from api.admin import setup_admin
 from api.commands import setup_commands
 from api.sockets import socketio
@@ -83,6 +84,8 @@ sync_permission_catalog()
 
 # Add all endpoints form the API with a "api" prefix
 app.register_blueprint(api, url_prefix='/api')
+# The customer portal is its own surface: see api/portal.py.
+app.register_blueprint(portal, url_prefix='/api/portal')
 
 # Handle/serialize errors like a JSON object
 

@@ -1,22 +1,60 @@
 // Thin fetch wrapper around the Compliance OS REST API.
-const BASE = (import.meta.env.VITE_BACKEND_URL || "").replace(/\/$/, "");
+// Same-origin: the Vite dev proxy forwards /api and /socket.io to Flask,
+// and in production Flask serves this bundle itself. No base URL needed.
+const BASE = "";
 
-function authHeaders() {
-  const token = localStorage.getItem("token");
-  return token ? { Authorization: `Bearer ${token}` } : {};
+// The JWT now lives in an httpOnly cookie the browser sends automatically, so
+// there is no token for JavaScript (or an XSS) to read. For state-changing
+// requests we echo the readable CSRF cookie in a header — this is what proves
+// the request came from our own page and not another site riding the cookie.
+function readCookie(name) {
+  const m = document.cookie.match(new RegExp("(^| )" + name + "=([^;]+)"));
+  return m ? decodeURIComponent(m[2]) : null;
+}
+
+function buildHeaders(method) {
+  const headers = { "Content-Type": "application/json" };
+  if (method && method.toUpperCase() !== "GET") {
+    const csrf = readCookie("csrf_access_token");
+    if (csrf) headers["X-CSRF-TOKEN"] = csrf;
+  }
+  return headers;
+}
+
+let refreshing = null;   // de-dupe concurrent refreshes
+
+async function tryRefresh() {
+  if (!refreshing) {
+    refreshing = fetch(`${BASE}/api/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+      headers: (() => {
+        const c = readCookie("csrf_refresh_token");
+        return c ? { "X-CSRF-TOKEN": c } : {};
+      })(),
+    }).then((r) => r.ok).catch(() => false).finally(() => { refreshing = null; });
+  }
+  return refreshing;
+}
+
+async function rawFetch(path, method, body) {
+  return fetch(`${BASE}/api${path}`, {
+    method,
+    credentials: "include",              // send the httpOnly auth cookies
+    headers: buildHeaders(method),
+    body: body ? JSON.stringify(body) : undefined,
+  });
 }
 
 async function request(path, { method = "GET", body } = {}) {
-  const res = await fetch(`${BASE}/api${path}`, {
-    method,
-    headers: { "Content-Type": "application/json", ...authHeaders() },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let res = await rawFetch(path, method, body);
 
-  if (res.status === 401) {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
+  // A stale 30-minute access token: silently refresh once and retry, so the
+  // user never sees a session drop mid-work.
+  if (res.status === 401 && path !== "/auth/refresh" && path !== "/auth/login") {
+    if (await tryRefresh()) res = await rawFetch(path, method, body);
   }
+  if (res.status === 401) localStorage.removeItem("user");
 
   let data = {};
   try { data = await res.json(); } catch (e) { data = {}; }
@@ -41,13 +79,16 @@ export const api = {
   screen: (id) => request(`/customers/${id}/screen`, { method: "POST" }),
   addDocument: (id, payload) => request(`/customers/${id}/documents`, { method: "POST", body: payload }),
   uploadDocument: async (id, docType, file) => {
-    const token = localStorage.getItem("token");
     const form = new FormData();
     form.append("file", file);
     form.append("doc_type", docType);
     const res = await fetch(`${BASE}/api/customers/${id}/documents`, {
       method: "POST",
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: "include",
+      headers: (() => {
+        const c = readCookie("csrf_access_token");
+        return c ? { "X-CSRF-TOKEN": c } : {};
+      })(),
       body: form,
     });
     const data = await res.json().catch(() => ({}));
@@ -155,14 +196,17 @@ export const api = {
   portalDeleteDocument: (id) =>
     request(`/portal/documents/${id}`, { method: "DELETE" }),
   portalUploadDocument: async (docType, description, file) => {
-    const token = localStorage.getItem("token");
     const form = new FormData();
     form.append("file", file);
     form.append("doc_type", docType);
     if (description) form.append("description", description);
     const res = await fetch(`${BASE}/api/portal/documents`, {
       method: "POST",
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: "include",
+      headers: (() => {
+        const c = readCookie("csrf_access_token");
+        return c ? { "X-CSRF-TOKEN": c } : {};
+      })(),
       body: form,
     });
     const data = await res.json().catch(() => ({}));
@@ -190,12 +234,15 @@ export const api = {
     request(`/chat/rooms/${roomId}/messages`, { method: "POST", body: payload }),
   markChatRead: (roomId) => request(`/chat/rooms/${roomId}/read`, { method: "POST" }),
   uploadChatMedia: async (file) => {
-    const token = localStorage.getItem("token");
     const form = new FormData();
     form.append("file", file);
     const res = await fetch(`${BASE}/api/chat/upload`, {
       method: "POST",
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: "include",
+      headers: (() => {
+        const c = readCookie("csrf_access_token");
+        return c ? { "X-CSRF-TOKEN": c } : {};
+      })(),
       body: form,
     });
     const data = await res.json();

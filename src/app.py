@@ -68,7 +68,15 @@ from api.security import check_startup_secret
 check_startup_secret()   # refuses to boot in production without a real secret
 app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY") or os.getenv(
     "FLASK_APP_KEY", "change-me-in-production")
-app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=12)
+# Short-lived access token + long-lived refresh, both delivered as httpOnly
+# cookies so JavaScript (and therefore an XSS) can never read them. Header
+# tokens still work for API clients and the test suite (JWT_TOKEN_LOCATION
+# lists both); CSRF protection only applies to the cookie path, which is the
+# browser's. See api/security.py for the cookie flags.
+from api.security import apply_jwt_cookie_config
+app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(minutes=30)
+app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=30)
+apply_jwt_cookie_config(app)
 jwt = JWTManager(app)
 
 

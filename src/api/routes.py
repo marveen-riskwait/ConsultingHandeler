@@ -43,6 +43,25 @@ from api.tasks import run_screening
 api = Blueprint("api", __name__)
 
 
+def _auth_response(user, status=200):
+    """Return the user and plant the access + refresh cookies. The body still
+    carries a token for API clients and older callers; the browser ignores it
+    and rides the httpOnly cookies instead."""
+    from flask_jwt_extended import (create_access_token, create_refresh_token,
+                                    set_access_cookies, set_refresh_cookies)
+    access = create_access_token(
+        identity=str(user.id),
+        additional_claims={"role": user.role, "org": user.organization_id})
+    refresh = create_refresh_token(identity=str(user.id))
+    # The browser rides the httpOnly cookies and ignores this body token (the
+    # store scrubs any JWT from localStorage). It stays in the body only so
+    # header-auth API clients and the test suite can obtain a token.
+    resp = jsonify({"user": user.serialize(), "token": access})
+    set_access_cookies(resp, access)
+    set_refresh_cookies(resp, refresh)
+    return resp, status
+
+
 def _rate_limit(*rules):
     """Per-route rate limit that no-ops until the limiter is attached in app.py
     (import order), and stays inert under TESTING so the suite isn't throttled."""
@@ -167,7 +186,7 @@ def login():
     user.locked_until = None
     user.last_login_at = utcnow()
     audit.record("LOGIN_OK", "user", user.id, actor=user, commit=True)
-    return jsonify({"token": make_token(user), "user": user.serialize()}), 200
+    return _auth_response(user)
 
 
 @api.route("/auth/logout", methods=["POST"])
@@ -185,7 +204,31 @@ def logout(user):
                   if exp else None)
     revoke(claims.get("jti"), user_id=user.id, expires_at=expires_at)
     audit.record("LOGOUT", "user", user.id, actor=user, commit=True)
-    return jsonify({"ok": True}), 200
+    from flask_jwt_extended import unset_jwt_cookies
+    resp = jsonify({"ok": True})
+    unset_jwt_cookies(resp)
+    return resp, 200
+
+
+@api.route("/auth/refresh", methods=["POST"])
+def refresh():
+    """Mint a fresh 30-minute access cookie from the refresh cookie. This is
+    what keeps a session alive without a long-lived access token, and without
+    the browser ever holding a token in JavaScript."""
+    from flask_jwt_extended import (jwt_required, get_jwt_identity,
+                                    create_access_token, set_access_cookies,
+                                    verify_jwt_in_request)
+    verify_jwt_in_request(refresh=True)
+    uid = get_jwt_identity()
+    user = User.query.get(int(uid)) if uid is not None else None
+    if user is None or not user.is_active:
+        raise APIException("Invalid or inactive user", status_code=401)
+    access = create_access_token(
+        identity=str(user.id),
+        additional_claims={"role": user.role, "org": user.organization_id})
+    resp = jsonify({"user": user.serialize(), "token": access})
+    set_access_cookies(resp, access)
+    return resp, 200
 
 
 @api.route("/auth/me", methods=["GET"])
@@ -1155,8 +1198,7 @@ def accept_invitation():
     audit.record("INVITATION_ACCEPTED", "user", new_user.id,
                  actor_label=inv.email, new_value=inv.proposed_role)
     db.session.commit()
-    return jsonify({"token": make_token(new_user),
-                    "user": new_user.serialize()}), 201
+    return _auth_response(new_user, status=201)
 
 
 @api.route("/users/<int:uid>", methods=["PATCH"])

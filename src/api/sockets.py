@@ -51,7 +51,9 @@ def _user_channel(user_id):
 @socketio.on("connect")
 def on_connect(auth):
     from api.models import User, ChatMember
-    token = (auth or {}).get("token")
+    # The token now rides the same-origin handshake as an httpOnly cookie; the
+    # auth payload is kept as a fallback for header-based/API clients.
+    token = (auth or {}).get("token") or request.cookies.get("access_token_cookie")
     try:
         uid = int(decode_token(token)["sub"])
     except Exception:

@@ -109,3 +109,21 @@ def register_rate_limits(app):
         enabled=os.getenv("RATELIMIT_ENABLED", "true").lower() != "false",
     )
     return limiter
+
+
+# --- cookie-based sessions ---------------------------------------------------
+def apply_jwt_cookie_config(app):
+    """Deliver JWTs as httpOnly cookies (browser) while still accepting the
+    Authorization header (API clients, tests). CSRF is enforced on the cookie
+    path only — flask-jwt-extended checks the X-CSRF-TOKEN header against a
+    readable csrf cookie for every non-GET cookie request."""
+    app.config["JWT_TOKEN_LOCATION"] = ["cookies", "headers"]
+    app.config["JWT_COOKIE_CSRF_PROTECT"] = True
+    app.config["JWT_CSRF_CHECK_FORM"] = False
+    # Secure (HTTPS-only) in production; Lax is enough because the app is
+    # same-origin (Vite proxy in dev, Flask-served bundle in prod).
+    app.config["JWT_COOKIE_SECURE"] = is_production()
+    app.config["JWT_COOKIE_SAMESITE"] = "Lax"
+    # The refresh cookie is only ever sent to the refresh endpoint.
+    app.config["JWT_REFRESH_COOKIE_PATH"] = "/api/auth/refresh"
+    app.config["JWT_ACCESS_COOKIE_PATH"] = "/"

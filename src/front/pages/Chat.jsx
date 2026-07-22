@@ -4,7 +4,7 @@ import { api } from "../services/api";
 import { getSocket } from "../services/socket";
 import { FilePreview } from "../components/FilePreview";
 
-const BASE = (import.meta.env.VITE_BACKEND_URL || "").replace(/\/$/, "");
+const BASE = "";   // same-origin (Vite proxy / Flask-served bundle)
 const mediaSrc = (url) => (url && url.startsWith("/") ? `${BASE}${url}` : url);
 const ICE = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
 

@@ -25,10 +25,17 @@ export const CaseDetail = () => {
     finally { setBusy(false); }
   };
 
+  // Completing a step is documented work, not a click: the button opens a
+  // findings box, and the backend refuses an empty one.
+  const [completing, setCompleting] = useState(null);   // instance id being completed
+  const [findings, setFindings] = useState("");
   const completeStep = async (instId) => {
     setError(null);
-    try { await api.completeStep(instId); await load(); }
-    catch (e) { setError(e.message); }
+    try {
+      await api.completeStep(instId, findings.trim());
+      setCompleting(null); setFindings("");
+      await load();
+    } catch (e) { setError(e.message); }
   };
   const approveStep = async (instId, decision) => {
     const r = window.prompt(`${decision === "APPROVE" ? "Approval" : "Rejection"} reason (audited):`);
@@ -125,6 +132,35 @@ export const CaseDetail = () => {
                       </div>
                       {s.note && <div className="meta">{s.note}</div>}
                       {isApproved && <div className="meta" style={{ color: "var(--sev-low)" }}>approved</div>}
+                      {s.status === "ACTIVE" && (!s.requires_approval || isApproved) && can(store.user, "workflow.execute") && (
+                      completing === workflow.id ? (
+                        <div className="wf-complete">
+                          <label className="cd-label">
+                            What was done on this step? (audited)
+                          </label>
+                          <textarea className="form-control form-control-sm" rows={3}
+                            placeholder="Findings, checks performed, conclusion…"
+                            value={findings} autoFocus
+                            onChange={(e) => setFindings(e.target.value)} />
+                          <div className="d-flex gap-2" style={{ marginTop: ".45rem" }}>
+                            <button className="btn btn-sm btn-outline-secondary"
+                              onClick={() => { setCompleting(null); setFindings(""); }}>
+                              Cancel
+                            </button>
+                            <button className="btn btn-sm btn-co"
+                              disabled={findings.trim().length < 5}
+                              onClick={() => completeStep(workflow.id)}>
+                              Complete step
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button className="btn btn-sm btn-outline-secondary"
+                          onClick={() => { setCompleting(workflow.id); setFindings(""); }}>
+                          Complete step
+                        </button>
+                      )
+                    )}
                       {isRejected && <div className="meta" style={{ color: "var(--sev-critical)" }}>rejected</div>}
                     </div>
                     {s.status === "ACTIVE" && s.requires_approval && !isApproved && !isRejected && can(store.user, "case.approve") && (
@@ -133,9 +169,7 @@ export const CaseDetail = () => {
                         <button className="btn btn-sm btn-outline-danger" onClick={() => approveStep(workflow.id, "REJECT")}>Reject</button>
                       </>
                     )}
-                    {s.status === "ACTIVE" && (!s.requires_approval || isApproved) && can(store.user, "workflow.execute") && (
-                      <button className="btn btn-sm btn-outline-secondary" onClick={() => completeStep(workflow.id)}>Complete step</button>
-                    )}
+                    
                   </div>
                 );
               })}

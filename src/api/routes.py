@@ -1641,8 +1641,15 @@ def start_workflow(user, case_id):
 def complete_step(user, instance_id):
     inst = _get_instance(user, instance_id)
     body = request.get_json(silent=True) or {}
+    note = (body.get("note") or "").strip()
+    if len(note) < 5:
+        # A compliance step is completed with findings, not with a click: the
+        # note is what an auditor reads to know the work actually happened.
+        raise APIException("Describe what was done before completing this step "
+                           "(min 5 characters) — it is recorded in the audit "
+                           "trail.", status_code=400)
     try:
-        workflow_engine.complete_current_step(inst, actor=user, note=body.get("note"))
+        workflow_engine.complete_current_step(inst, actor=user, note=note)
     except PermissionError as exc:
         raise APIException(str(exc), status_code=403)
     except ValueError as exc:

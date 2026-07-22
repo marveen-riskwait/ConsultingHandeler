@@ -19,14 +19,22 @@ def test_sanctions_workflow_autostarts_and_approval_gates(client, tokens):
     assert wf["steps"][0]["status"] == "ACTIVE"
 
     inst = wf["id"]
-    # advance the first three (non-approval) steps
-    for _ in range(3):
+    # A bare click is refused: a step is completed with findings, not a click.
+    r = client.post(f"/api/workflow-instances/{inst}/complete-step",
+                    headers=auth(ta))
+    assert r.status_code == 400
+    assert "describe" in r.get_json()["message"].lower()
+
+    # advance the first three (non-approval) steps, each with its findings
+    for n in range(3):
         r = client.post(f"/api/workflow-instances/{inst}/complete-step",
+                        json={"note": f"Step {n + 1}: checked and documented."},
                         headers=auth(ta))
         assert r.status_code == 200
 
-    # the 4th step needs approval — completing it is blocked
-    r = client.post(f"/api/workflow-instances/{inst}/complete-step", headers=auth(ta))
+    # the 4th step needs approval — completing it is blocked even with findings
+    r = client.post(f"/api/workflow-instances/{inst}/complete-step",
+                    json={"note": "attempting before approval"}, headers=auth(ta))
     assert r.status_code == 403
 
     # analyst cannot approve (needs case.approve); officer can
@@ -39,6 +47,10 @@ def test_sanctions_workflow_autostarts_and_approval_gates(client, tokens):
                     headers=auth(to))
     assert r.status_code == 200
 
-    # now the step completes and the workflow finishes
-    r = client.post(f"/api/workflow-instances/{inst}/complete-step", headers=auth(ta))
+    # now the step completes and the workflow finishes; the findings persist
+    r = client.post(f"/api/workflow-instances/{inst}/complete-step",
+                    json={"note": "Investigation closed with senior approval."},
+                    headers=auth(ta))
     assert r.get_json()["status"] == "COMPLETED"
+    assert any((st.get("note") or "").startswith("Investigation closed")
+               for st in r.get_json()["steps"])

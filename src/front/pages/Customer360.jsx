@@ -8,6 +8,7 @@ import { DeleteCustomerModal } from "../components/DeleteCustomerModal";
 import { RowMenu } from "../components/RowMenu";
 import { DocumentReview } from "../components/DocumentReview";
 import { PortalAccess } from "../components/PortalAccess";
+import { MatchDetails } from "../components/MatchDetails";
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : "—");
 
@@ -440,6 +441,7 @@ export const Customer360 = () => {
                     {m.source} · score {m.match_score}%
                     {m.decision_reason ? ` · ${m.decision_reason}` : ""}
                   </div>
+                  <MatchDetails match={m} />
                 </div>
                 <span className={`chip ${MATCH_SEV[m.status] || "INFO"}`}>{m.status.replace(/_/g, " ")}</span>
               </div>

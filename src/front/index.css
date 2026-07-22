@@ -571,3 +571,27 @@ h1, h2, h3, h4, .co-serif {
   font-size: .74rem; color: var(--co-muted); word-break: break-all;
   margin-top: .3rem; font-family: monospace;
 }
+
+/* Screening match evidence (components/MatchDetails.jsx) — labelled text in a
+   fixed field order, so two matches from two providers compare at a glance. */
+.md-toggle {
+  border: 0; background: transparent; padding: 0; margin-top: .25rem;
+  font-size: .78rem; color: var(--co-primary); cursor: pointer;
+}
+.md-panel {
+  margin: .45rem 0 .3rem; padding: .55rem .7rem;
+  border: 1px solid var(--co-border); border-left: 3px solid var(--co-primary);
+  border-radius: 8px; background: #fafbfc; font-size: .84rem;
+}
+.md-row { display: flex; gap: .6rem; padding: .12rem 0; }
+.md-label { flex: 0 0 92px; color: var(--co-muted); font-size: .76rem;
+  text-transform: uppercase; letter-spacing: .03em; padding-top: .1rem; }
+.md-value { flex: 1; word-break: break-word; }
+
+/* Workflow step completion (CaseDetail): findings box + recorded note. */
+.wf-complete {
+  margin-top: .5rem; padding: .6rem .7rem;
+  border: 1px solid var(--co-border); border-left: 3px solid var(--co-primary);
+  border-radius: 8px; background: #fafbfc; max-width: 480px;
+}
+.wf-note { margin-top: .2rem; font-style: italic; }

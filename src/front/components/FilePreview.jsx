@@ -6,7 +6,15 @@ import { useEffect, useState } from "react";
 // Downloading stays available as an explicit choice, never the only option.
 const TEXTUAL = /(^text\/)|json|csv|xml|yaml|markdown/i;
 
-export const FilePreview = ({ url, mediaType, name, onClose }) => {
+// Media is served by the BACKEND (/api/media/...), and in two-server dev the
+// page runs on Vite's port — a relative URL then asks Vite for the file and
+// draws a broken-image icon. Resolving here, once, covers every caller;
+// already-absolute URLs (the chat prefixes its own) pass through untouched.
+const BASE = (import.meta.env.VITE_BACKEND_URL || "").replace(/\/$/, "");
+const resolve = (url) => (url && url.startsWith("/") ? `${BASE}${url}` : url);
+
+export const FilePreview = ({ url: rawUrl, mediaType, name, onClose }) => {
+  const url = resolve(rawUrl);
   const [text, setText] = useState(null);
   const [error, setError] = useState(null);
   const isPdf = /pdf/i.test(mediaType || "") || /\.pdf($|\?)/i.test(url || "");

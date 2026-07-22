@@ -149,3 +149,44 @@ def test_information_request_task_closes_when_the_item_arrives(client, tokens):
 
     assert Task.query.get(chase.id).status == "DONE", \
         "the chase task must close when the item arrives"
+
+
+def test_many_findings_one_investigation(client, tokens, app):
+    """A screening run on a common name yields many fuzzy matches at once.
+    Ten findings are one thing to investigate — one case, one task, one open
+    alert — not ten identical rows in every queue. (Found on a real file:
+    10 matches produced cases 2..11, 10 alerts and 10 tasks for one person.)"""
+    from api.engine.events import emit_event
+    from api.models import Case, ComplianceAlert, Task
+
+    to = tokens["officer@test.io"]
+    cid = client.post("/api/customers", headers=auth(to),
+                      json={"name": "Common Name Person",
+                            "customer_type": "INDIVIDUAL"}).get_json()["id"]
+
+    with app.app_context():
+        for n in range(4):     # four findings from one run
+            emit_event("SANCTIONS_MATCH_FOUND", customer_id=cid,
+                       severity="CRITICAL", source="screening",
+                       payload={"matched_name": f"Listed Person {n}",
+                                "match_score": 75 + n})
+
+    cases = Case.query.filter_by(customer_id=cid, status="OPEN").all()
+    assert len(cases) == 1, f"expected one investigation, got {len(cases)}"
+
+    open_alerts = (ComplianceAlert.query.filter_by(customer_id=cid)
+                   .filter(ComplianceAlert.status.in_(("OPEN", "ASSIGNED"))).count())
+    assert open_alerts == 1, f"expected one open alert, got {open_alerts}"
+
+    open_tasks = (Task.query.filter_by(customer_id=cid)
+                  .filter(Task.status != "DONE")
+                  .filter(Task.task_type != "INFORMATION_REQUEST").count())
+    assert open_tasks <= 1, f"expected at most one review task, got {open_tasks}"
+
+    # A DIFFERENT finding type still gets its own investigation.
+    with app.app_context():
+        emit_event("PEP_DETECTED", customer_id=cid, severity="HIGH",
+                   source="screening", payload={"matched_name": "Listed Person 0"})
+    types = {c.case_type for c in
+             Case.query.filter_by(customer_id=cid, status="OPEN").all()}
+    assert len(types) == 2, "sanctions and PEP remain separate investigations"

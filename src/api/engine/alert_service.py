@@ -19,6 +19,16 @@ def maybe_create_from_event(event):
         return None
     if ComplianceAlert.query.filter_by(event_id=event.id).first():
         return None
+    # One open alert per customer and alert type: ten fuzzy matches from one
+    # screening run are one thing to look at, not ten rows in the alert center.
+    open_same = (ComplianceAlert.query
+                 .filter(ComplianceAlert.customer_id == event.customer_id,
+                         ComplianceAlert.alert_type == event.event_type,
+                         ComplianceAlert.status.in_(("OPEN", "ASSIGNED",
+                                                     "IN_REVIEW")))
+                 .first())
+    if open_same is not None:
+        return None
     customer = Customer.query.get(event.customer_id)
     if customer is None:
         return None

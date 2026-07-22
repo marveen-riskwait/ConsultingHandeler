@@ -53,9 +53,22 @@ def _run_action(action, *, customer, event, created_case):
     if atype == "CREATE_CASE":
         if customer is None:
             return created_case   # a case must belong to a customer
+        case_type = action.get("case_type", event.event_type)
+        # One investigation per customer and case type, not one per finding.
+        # A screening run on a common name yields many fuzzy matches at once;
+        # opening a case for each buried one real customer under ten identical
+        # investigations. New findings join the open case instead — and the
+        # close-out logic already refuses to close it while any match on it is
+        # still active.
+        existing = (Case.query
+                    .filter_by(customer_id=customer.id, case_type=case_type,
+                               status="OPEN")
+                    .order_by(Case.id.desc()).first())
+        if existing is not None:
+            return existing
         case = Case(
             customer_id=customer.id,
-            case_type=action.get("case_type", event.event_type),
+            case_type=case_type,
             title=action.get("title", event.event_type.replace("_", " ").title()),
             priority=action.get("priority", "MEDIUM"),
             status="OPEN",
@@ -75,10 +88,19 @@ def _run_action(action, *, customer, event, created_case):
         return case
 
     if atype == "CREATE_TASK":
+        task_type = action.get("task_type", "REVIEW")
+        # Same discipline as cases: one open task of a given type per customer.
+        # Ten findings mean one "compare against the record" job, not ten.
+        if customer is not None:
+            already = (Task.query
+                       .filter_by(customer_id=customer.id, task_type=task_type)
+                       .filter(Task.status != "DONE").first())
+            if already is not None:
+                return created_case
         task = Task(
             customer_id=customer.id if customer else None,
             case_id=created_case.id if created_case else None,
-            task_type=action.get("task_type", "REVIEW"),
+            task_type=task_type,
             title=action.get("title", "Compliance task"),
             priority=action.get("priority", "MEDIUM"),
             due_at=utcnow() + timedelta(days=action.get("due_days", 5)),

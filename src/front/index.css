@@ -595,3 +595,19 @@ h1, h2, h3, h4, .co-serif {
   border-radius: 8px; background: #fafbfc; max-width: 480px;
 }
 .wf-note { margin-top: .2rem; font-style: italic; }
+
+/* Capped row lists: a card keeps a predictable height and its content scrolls
+   inside. The count lives in the card title, so what is below the fold is
+   announced — people do not scroll what they do not suspect exists. Lists
+   only: forms keep the natural page scroll. */
+.co-rows {
+  max-height: 21rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #c3c9d4 transparent;
+  padding-right: .15rem;
+}
+.co-rows::-webkit-scrollbar { width: 7px; }
+.co-rows::-webkit-scrollbar-thumb { background: #c3c9d4; border-radius: 4px; }
+.co-rows::-webkit-scrollbar-track { background: transparent; }

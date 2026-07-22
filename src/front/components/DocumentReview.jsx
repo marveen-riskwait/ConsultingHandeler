@@ -58,6 +58,7 @@ export const DocumentReview = ({ customerId, documents, canReview, onChange }) =
         <div className="empty">Nothing received yet.</div>
       )}
 
+      <div className="co-rows">
       {withFile.map((d) => {
         const [chip, label] = STATE[stateOf(d)];
         return (
@@ -138,6 +139,7 @@ export const DocumentReview = ({ customerId, documents, canReview, onChange }) =
           </div>
         );
       })}
+      </div>
 
       {preview && (
         <FilePreview url={preview.file_url} mediaType={preview.media_type}

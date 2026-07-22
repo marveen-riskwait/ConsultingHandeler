@@ -285,8 +285,9 @@ export const Customer360 = () => {
         <div className="col-md-7">
           {/* Changes since review */}
           <div className="co-card">
-            <div className="section-title">Changes since last review</div>
+            <div className="section-title">Changes since last review {changes_since_review.length > 0 && `(${changes_since_review.length})`}</div>
             {changes_since_review.length === 0 && <div className="muted" style={{ fontSize: ".88rem" }}>No changes detected.</div>}
+            <div className="co-rows">
             {changes_since_review.map((e) => (
               <div className="work-row" key={e.id}>
                 <span className={`dotsev ${e.severity}`} />
@@ -297,12 +298,14 @@ export const Customer360 = () => {
                 <span className={`chip ${e.severity}`}>{e.severity}</span>
               </div>
             ))}
+            </div>
           </div>
 
           {/* Open cases */}
           <div className="co-card">
-            <div className="section-title">Open cases</div>
+            <div className="section-title">Open cases {open_cases.length > 0 && `(${open_cases.length})`}</div>
             {open_cases.length === 0 && <div className="muted" style={{ fontSize: ".88rem" }}>No open cases.</div>}
+            <div className="co-rows">
             {open_cases.map((c) => (
               <div className="work-row" key={c.id}>
                 <span className={`dotsev ${c.priority}`} />
@@ -313,6 +316,7 @@ export const Customer360 = () => {
                 <Link to={`/cases/${c.id}`} className="btn btn-sm btn-outline-secondary">Investigate</Link>
               </div>
             ))}
+            </div>
           </div>
         </div>
       </div>
@@ -353,9 +357,10 @@ export const Customer360 = () => {
       <div className="row g-3 mt-0">
         <div className="col-md-6">
           <div className="co-card">
-            <div className="section-title">Reviews</div>
+            <div className="section-title">Reviews {reviews.length > 0 && `(${reviews.length})`}</div>
             {reviews.length === 0 && <div className="muted" style={{ fontSize: ".88rem" }}>No reviews.</div>}
-            {reviews.slice(0, 6).map((r) => (
+            <div className="co-rows">
+            {reviews.map((r) => (
               <div className="work-row" key={r.id}>
                 <span className={`dotsev ${REVIEW_SEV[r.status] || "INFO"}`} />
                 <div className="grow">
@@ -371,12 +376,14 @@ export const Customer360 = () => {
                 )}
               </div>
             ))}
+            </div>
           </div>
         </div>
         <div className="col-md-6">
           <div className="co-card">
-            <div className="section-title">Open compliance alerts</div>
+            <div className="section-title">Open compliance alerts {open_alerts.length > 0 && `(${open_alerts.length})`}</div>
             {open_alerts.length === 0 && <div className="muted" style={{ fontSize: ".88rem" }}>No open alerts.</div>}
+            <div className="co-rows">
             {open_alerts.map((a) => (
               <div key={a.id} style={{ borderBottom: "1px solid var(--co-border)" }}>
                 <div className="work-row" style={{ borderBottom: "none" }}>
@@ -391,6 +398,7 @@ export const Customer360 = () => {
                 {openAlert === a.id && <AlertDetails details={a.details} />}
               </div>
             ))}
+            </div>
           </div>
         </div>
       </div>
@@ -398,8 +406,9 @@ export const Customer360 = () => {
       <div className="row g-3 mt-0">
         <div className="col-md-6">
           <div className="co-card">
-            <div className="section-title">Open tasks</div>
+            <div className="section-title">Open tasks {tasks.length > 0 && `(${tasks.length})`}</div>
             {tasks.length === 0 && <div className="muted" style={{ fontSize: ".88rem" }}>None.</div>}
+            <div className="co-rows">
             {tasks.map((t) => (
               <div className="work-row" key={t.id}>
                 <span className={`dotsev ${t.priority}`} />
@@ -407,12 +416,14 @@ export const Customer360 = () => {
                 <span className={`chip ${t.priority}`}>{t.priority}</span>
               </div>
             ))}
+            </div>
           </div>
         </div>
         <div className="col-md-6">
           <div className="co-card">
-            <div className="section-title">Recent events</div>
+            <div className="section-title">Recent events {recent_events.length > 0 && `(${recent_events.length})`}</div>
             {recent_events.length === 0 && <div className="muted" style={{ fontSize: ".88rem" }}>No events yet.</div>}
+            <div className="co-rows">
             {recent_events.map((e) => (
               <div className="tl-item" key={e.id}>
                 <span className="when">{fmt(e.detected_at)}</span>
@@ -420,6 +431,7 @@ export const Customer360 = () => {
                 <span style={{ fontSize: ".88rem" }}>{e.event_type.replace(/_/g, " ")}</span>
               </div>
             ))}
+            </div>
           </div>
         </div>
       </div>
@@ -428,10 +440,11 @@ export const Customer360 = () => {
         {/* Screening matches — first-class records with their own lifecycle */}
         <div className="col-md-6">
           <div className="co-card">
-            <div className="section-title">Screening matches</div>
+            <div className="section-title">Screening matches {screening_matches.length > 0 && `(${screening_matches.length})`}</div>
             {screening_matches.length === 0 && (
               <div className="muted" style={{ fontSize: ".88rem" }}>No matches. Run screening.</div>
             )}
+            <div className="co-rows">
             {screening_matches.map((m) => (
               <div className="work-row" key={m.id}>
                 <span className={`dotsev ${MATCH_SEV[m.status] || "INFO"}`} />
@@ -446,6 +459,7 @@ export const Customer360 = () => {
                 <span className={`chip ${MATCH_SEV[m.status] || "INFO"}`}>{m.status.replace(/_/g, " ")}</span>
               </div>
             ))}
+            </div>
           </div>
         </div>
 

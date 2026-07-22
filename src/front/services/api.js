@@ -171,6 +171,7 @@ export const api = {
   portalAssistant: () => request("/portal/assistant"),
   portalAsk: (message) =>
     request("/portal/assistant", { method: "POST", body: { message } }),
+  rejectionReasons: () => request("/portal/rejection-reasons"),
   reviewDocument: (cid, did, payload) =>
     request(`/customers/${cid}/documents/${did}/review`, { method: "POST", body: payload }),
 

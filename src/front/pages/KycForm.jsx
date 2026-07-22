@@ -266,7 +266,6 @@ export const KycForm = () => {
                       <i className="fa-solid fa-arrow-up-from-bracket" />{" "}
                       {uploading === p.doc_type ? "Uploading…" : "Upload"}
                       <input type="file" hidden
-                        accept=".pdf,.png,.jpg,.jpeg,.heic,.webp,.tif,.tiff"
                         disabled={uploading === p.doc_type}
                         onChange={(e) => {
                           uploadProof(p.doc_type, e.target.files?.[0]);

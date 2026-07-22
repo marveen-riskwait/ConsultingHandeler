@@ -6,6 +6,7 @@ import { can } from "../permissions/can";
 import { AlertDetails } from "../components/AlertDetails";
 import { DeleteCustomerModal } from "../components/DeleteCustomerModal";
 import { RowMenu } from "../components/RowMenu";
+import { DocumentReview } from "../components/DocumentReview";
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : "—");
 
@@ -304,6 +305,10 @@ export const Customer360 = () => {
           </div>
         </div>
       </div>
+
+      {/* What the customer actually sent, and the decision on each piece. */}
+      <DocumentReview customerId={id} documents={documents}
+        canReview={can(store.user, "document.verify")} onChange={load} />
 
       {/* Compliance completeness — what's missing before the review */}
       {completeness && (

@@ -553,3 +553,10 @@ h1, h2, h3, h4, .co-serif {
   background: var(--co-surface); border: 1px solid var(--co-border);
   border-radius: 12px; padding: .8rem 1rem; margin-bottom: 1rem;
 }
+
+/* Returning a document to the customer (components/DocumentReview.jsx). */
+.dr-return {
+  margin: 0 0 .6rem 1.6rem; padding: .7rem .8rem;
+  border: 1px solid var(--co-border); border-left: 3px solid var(--sev-high);
+  border-radius: 8px; background: #fafbfc;
+}

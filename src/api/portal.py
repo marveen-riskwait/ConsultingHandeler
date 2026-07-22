@@ -100,15 +100,33 @@ def portal_document(doc):
 
 def _progress(customer):
     """How much of what we asked for has arrived. Counts requested items, not
-    compliance completeness — the client sees their own to-do list."""
+    compliance completeness — the client sees their own to-do list.
+
+    Each outstanding document carries the `doc_type` the requirement engine
+    actually matches on. Sending the requirement *code* instead files the
+    document under a type nothing looks at: it never satisfies the requirement
+    and never appears under the right row in the analyst's view. The two are
+    not the same string — IDENTITY_DOCUMENT is satisfied by a PASSPORT.
+    """
+    from api.models import RequirementDefinition
+
     summary = requirement_engine.summary(customer)
     items = summary.get("requirements", [])
     outstanding = [r for r in items if r.get("status") == "MISSING"]
+    definitions = {d.id: d for d in RequirementDefinition.query.filter(
+        RequirementDefinition.id.in_([r["definition_id"] for r in outstanding
+                                      if r.get("definition_id")] or [0])).all()}
+    rows = []
+    for r in outstanding:
+        definition = definitions.get(r.get("definition_id"))
+        rows.append({"code": r["code"], "label": r["label"],
+                     "kind": r.get("kind"),
+                     "doc_type": (definition.doc_type if definition else None)
+                                 or r["code"]})
     return {
         "requested": len(items),
         "provided": len(items) - len(outstanding),
-        "outstanding": [{"code": r["code"], "label": r["label"],
-                         "kind": r.get("kind")} for r in outstanding],
+        "outstanding": rows,
     }
 
 

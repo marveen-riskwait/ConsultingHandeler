@@ -136,14 +136,14 @@ const MyDocuments = ({ data, reload, notify }) => {
               <div className="title">{o.label}</div>
               <input className="form-control form-control-sm" style={{ marginTop: ".35rem" }}
                 placeholder="Tell us what you are sending (optional)"
-                value={note[o.code] || ""}
-                onChange={(e) => setNote((n) => ({ ...n, [o.code]: e.target.value }))} />
+                value={note[o.doc_type || o.code] || ""}
+                onChange={(e) => setNote((n) => ({ ...n, [o.doc_type || o.code]: e.target.value }))} />
             </div>
-            <label className={"btn btn-sm btn-co" + (uploading === o.code ? " disabled" : "")}>
+            <label className={"btn btn-sm btn-co" + (uploading === (o.doc_type || o.code) ? " disabled" : "")}>
               <i className="fa-solid fa-arrow-up-from-bracket" />{" "}
-              {uploading === o.code ? "Sending…" : "Send"}
-              <input type="file" hidden accept=".pdf,.png,.jpg,.jpeg,.heic,.webp"
-                onChange={(e) => { send(o.code, e.target.files?.[0]); e.target.value = ""; }} />
+              {uploading === (o.doc_type || o.code) ? "Sending…" : "Send"}
+              <input type="file" hidden 
+                onChange={(e) => { send(o.doc_type || o.code, e.target.files?.[0]); e.target.value = ""; }} />
             </label>
           </div>
         ))}

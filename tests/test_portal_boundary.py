@@ -135,7 +135,9 @@ def test_progress_counts_what_was_asked_not_compliance(client, portal):
     assert set(progress) == {"requested", "provided", "outstanding"}
     assert progress["requested"] >= progress["provided"]
     for item in progress["outstanding"]:
-        assert set(item) == {"code", "label", "kind"}
+        # doc_type is what the engine matches a document on — the client needs
+        # it to file the upload under the right type.
+        assert set(item) == {"code", "label", "kind", "doc_type"}
 
 
 def test_the_portal_assistant_is_never_handed_the_assessment(app):
@@ -366,3 +368,58 @@ def test_a_broken_brevo_key_does_not_break_the_action(app, monkeypatch):
     out = mailer.send("client@example.com", "Subject", "Body")
     assert out["sent"] is False
     assert "401" in out["reason"] and out["transport"] == "brevo"
+
+
+def test_the_portal_uploads_under_the_type_the_engine_matches(client, portal, app):
+    """The bug behind "I sent it and nothing happened": the portal filed
+    documents under the requirement *code*, while the engine matches on the
+    definition's doc_type — and IDENTITY_DOCUMENT is satisfied by a PASSPORT.
+    Every document sent for an identity requirement silently counted for
+    nothing."""
+    t = portal["token"]
+    outstanding = client.get("/api/portal/me", headers=auth(t)).get_json()["progress"]["outstanding"]
+    identity = next(o for o in outstanding if o["code"] == "IDENTITY_DOCUMENT")
+    assert identity["doc_type"] == "PASSPORT", "the code is not the doc_type"
+
+    client.post("/api/portal/documents", headers=auth(t),
+                data={"doc_type": identity["doc_type"],
+                      "file": (io.BytesIO(b"\x89PNG scan"), "id.png", "image/png")},
+                content_type="multipart/form-data")
+
+    after = client.get("/api/portal/me", headers=auth(t)).get_json()["progress"]
+    assert all(o["code"] != "IDENTITY_DOCUMENT" for o in after["outstanding"]), \
+        "sending the identity document must satisfy the requirement"
+
+
+def test_any_file_type_is_accepted_and_carries_its_media_type(client, portal):
+    """Customers photograph documents with whatever is to hand; refusing a
+    format only produces a support conversation."""
+    t = portal["token"]
+    for name, mime, blob in [("scan.png", "image/png", b"\x89PNG"),
+                             ("id.heic", "image/heic", b"heic-bytes"),
+                             ("statement.pdf", "application/pdf", b"%PDF-1.4"),
+                             ("notes.txt", "text/plain", b"hello"),
+                             ("archive.zip", "application/zip", b"PK\x03\x04")]:
+        r = client.post("/api/portal/documents", headers=auth(t),
+                        data={"doc_type": "OTHER",
+                              "file": (io.BytesIO(blob), name, mime)},
+                        content_type="multipart/form-data")
+        assert r.status_code == 201, f"{name} was refused"
+        # The media type travels, which is what lets the analyst preview it
+        # in place instead of downloading it first.
+        assert r.get_json()["media_type"] == mime
+
+
+def test_the_analyst_sees_what_the_customer_sent_and_said(client, portal, tokens):
+    t, officer = portal["token"], tokens["officer@test.io"]
+    client.post("/api/portal/documents", headers=auth(t),
+                data={"doc_type": "PASSPORT",
+                      "description": "Photo of my ID card, front side",
+                      "file": (io.BytesIO(b"\x89PNG"), "front.png", "image/png")},
+                content_type="multipart/form-data")
+
+    d = client.get(f"/api/customers/{portal['mine']}", headers=auth(officer)).get_json()
+    doc = next(x for x in d["documents"] if x["file_name"] == "front.png")
+    assert doc["description"] == "Photo of my ID card, front side"
+    assert doc["media_type"] == "image/png" and doc["has_file"] is True
+    assert doc["file_url"].startswith("/api/media/")

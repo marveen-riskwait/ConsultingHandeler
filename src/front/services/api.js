@@ -143,6 +143,35 @@ export const api = {
   revokeInvitation: (id) => request(`/invitations/${id}/revoke`, { method: "POST" }),
   acceptInvitation: (payload) => request("/auth/accept-invitation", { method: "POST", body: payload }),
 
+  // Customer portal (client-facing surface; see api/portal.py)
+  portalMe: () => request("/portal/me"),
+  portalForm: () => request("/portal/kyc-form"),
+  portalSaveForm: (fields) =>
+    request("/portal/kyc-form", { method: "POST", body: { fields } }),
+  portalDocuments: () => request("/portal/documents"),
+  portalDeleteDocument: (id) =>
+    request(`/portal/documents/${id}`, { method: "DELETE" }),
+  portalUploadDocument: async (docType, description, file) => {
+    const token = localStorage.getItem("token");
+    const form = new FormData();
+    form.append("file", file);
+    form.append("doc_type", docType);
+    if (description) form.append("description", description);
+    const res = await fetch(`${BASE}/api/portal/documents`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || `Upload failed (${res.status})`);
+    return data;
+  },
+  portalAssistant: () => request("/portal/assistant"),
+  portalAsk: (message) =>
+    request("/portal/assistant", { method: "POST", body: { message } }),
+  reviewDocument: (cid, did, payload) =>
+    request(`/customers/${cid}/documents/${did}/review`, { method: "POST", body: payload }),
+
   // Team chat
   chatUsers: () => request("/chat/users"),
   chatRooms: () => request("/chat/rooms"),

@@ -130,6 +130,8 @@ def portal_get_form(_user):
     return jsonify({
         **schema,
         "customer": portal_customer(customer),
+        # The client is dealing with the firm, so the firm is named.
+        "organization": (_u.organization.name if _u.organization else None),
         # `verified` is the firm's judgement on the answer — not shown.
         "values": {f.field_key: {"value": f.value} for f in fields},
         "documents": [portal_document(d) for d in docs],
@@ -224,3 +226,49 @@ def portal_rejection_reasons(_user):
     """Shared with the staff UI so both sides use the same wording."""
     return jsonify([{"code": c, "message": m}
                     for c, m in REJECTION_REASONS.items()]), 200
+
+
+# ---------------------------------------------------------------------------
+# Assistant — one thread, about their own outstanding items, nothing else.
+# ---------------------------------------------------------------------------
+def _portal_conversation(user, customer, create=True):
+    from api.models import Conversation
+    convo = (Conversation.query
+             .filter_by(user_id=user.id, customer_id=customer.id)
+             .order_by(Conversation.id.desc()).first())
+    if convo is None and create:
+        convo = Conversation(organization_id=user.organization_id,
+                             user_id=user.id, customer_id=customer.id,
+                             title="Help with my file")
+        db.session.add(convo)
+        db.session.flush()
+    return convo
+
+
+@portal.route("/assistant", methods=["GET"])
+@login_required
+def portal_assistant(_user):
+    """A single ongoing thread — a customer has no use for many."""
+    from api.engine import assistant_service
+    from api.integrations.ai import get_llm
+    user, customer = portal_user()
+    convo = _portal_conversation(user, customer)
+    db.session.commit()
+    return jsonify({
+        "provider": get_llm().name,
+        "suggested": assistant_service.PORTAL_SUGGESTED_PROMPTS,
+        "messages": [m.serialize() for m in convo.messages],
+    }), 200
+
+
+@portal.route("/assistant", methods=["POST"])
+@login_required
+def portal_assistant_send(_user):
+    from api.engine import assistant_service
+    user, customer = portal_user()
+    text = ((request.get_json(silent=True) or {}).get("message") or "").strip()
+    if not text:
+        raise APIException("A message is required", status_code=400)
+    convo = _portal_conversation(user, customer)
+    reply = assistant_service.ask(convo, user, text, portal=True)
+    return jsonify(reply.serialize()), 201

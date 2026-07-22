@@ -136,3 +136,97 @@ def test_progress_counts_what_was_asked_not_compliance(client, portal):
     assert progress["requested"] >= progress["provided"]
     for item in progress["outstanding"]:
         assert set(item) == {"code", "label", "kind"}
+
+
+def test_the_portal_assistant_is_never_handed_the_assessment(app):
+    """The staff context builder emits risk, PEP and sanctions. The portal one
+    must be structurally incapable of it — not merely trimmed."""
+    from api.engine.assistant_service import (customer_context,
+                                              portal_customer_context)
+    from api.models import Customer
+
+    with app.app_context():
+        customer = Customer.query.filter_by(name="Marie Dupont").first()
+        customer.risk_level = "CRITICAL"
+        customer.risk_score = 95
+        customer.is_pep = True
+        customer.has_sanctions_match = True
+
+        staff = customer_context(customer)
+        assert "CRITICAL" in staff and "Risk" in staff      # the staff view does
+
+        client_view = portal_customer_context(customer).lower()
+        # No rating, no screening outcome, no assessment vocabulary.
+        for forbidden in ("critical", "risk", "sanction", "adverse media",
+                          "screening", "score", "95"):
+            assert forbidden not in client_view, f"{forbidden} reached the client"
+        # "PEP self-declaration" may appear: that is a question the customer
+        # answers about themselves, not a result of screening them. The line is
+        # between what they declare and what the firm concludes.
+        if "pep" in client_view:
+            assert "pep self-declaration" in client_view
+        assert "marie dupont" in client_view
+        assert "outstanding" in client_view or "nothing is outstanding" in client_view
+
+
+def test_portal_assistant_thread_is_scoped_to_the_signed_in_customer(client, portal, app):
+    r = client.get("/api/portal/assistant", headers=auth(portal["token"]))
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["suggested"] and isinstance(body["messages"], list)
+
+    sent = client.post("/api/portal/assistant", headers=auth(portal["token"]),
+                       json={"message": "What do you still need from me?"})
+    assert sent.status_code == 201
+
+    from api.models import Conversation
+    with app.app_context():
+        convo = Conversation.query.filter_by(customer_id=portal["mine"]).first()
+        assert convo is not None and convo.customer_id == portal["mine"]
+
+    # And the staff assistant stays closed to them.
+    assert client.get("/api/assistant/meta",
+                      headers=auth(portal["token"])).status_code == 403
+
+
+def test_returning_a_document_reaches_the_customer_with_a_neutral_reason(client, portal, tokens, app):
+    """The loop that makes the portal useful: the client sends, the analyst
+    returns it with a reason, the client sees what to do — and the reason
+    describes the document, never the analysis."""
+    t = portal["token"]
+    doc = client.post("/api/portal/documents", headers=auth(t),
+                      data={"doc_type": "IDENTITY_DOCUMENT",
+                            "description": "My passport",
+                            "file": (io.BytesIO(b"%PDF blurry"), "passport.pdf",
+                                     "application/pdf")},
+                      content_type="multipart/form-data").get_json()
+    assert doc["state"] == "RECEIVED"
+
+    officer = tokens["officer@test.io"]
+    r = client.post(
+        f"/api/customers/{portal['mine']}/documents/{doc['id']}/review",
+        headers=auth(officer), json={"decision": "RETURN",
+                                     "reason_code": "UNREADABLE"})
+    assert r.status_code == 200
+
+    seen = client.get("/api/portal/documents", headers=auth(t)).get_json()
+    returned = next(d for d in seen if d["id"] == doc["id"])
+    assert returned["state"] == "RETURNED"
+    assert "readable" in returned["returned_reason"].lower()
+
+    # Accepting clears the reason and shows as accepted.
+    client.post(f"/api/customers/{portal['mine']}/documents/{doc['id']}/review",
+                headers=auth(officer), json={"decision": "ACCEPT"})
+    seen = client.get("/api/portal/documents", headers=auth(t)).get_json()
+    assert next(d for d in seen if d["id"] == doc["id"])["state"] == "ACCEPTED"
+
+
+def test_returning_a_document_requires_a_reason(client, portal, tokens):
+    t, officer = portal["token"], tokens["officer@test.io"]
+    doc = client.post("/api/portal/documents", headers=auth(t),
+                      data={"doc_type": "OTHER",
+                            "file": (io.BytesIO(b"x"), "a.pdf", "application/pdf")},
+                      content_type="multipart/form-data").get_json()
+    r = client.post(f"/api/customers/{portal['mine']}/documents/{doc['id']}/review",
+                    headers=auth(officer), json={"decision": "RETURN"})
+    assert r.status_code == 400

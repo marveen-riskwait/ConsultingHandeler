@@ -4,6 +4,7 @@ import ScrollToTop from "../components/ScrollToTop";
 import { Sidebar } from "../components/Sidebar";
 import { Login } from "./Login";
 import { Landing } from "./Landing";
+import { Portal } from "./Portal";
 import useGlobalReducer from "../hooks/useGlobalReducer";
 import { api } from "../services/api";
 import { resetSocket } from "../services/socket";
@@ -46,6 +47,13 @@ export const Layout = () => {
     // marketing page — including legacy links that point at the root.
     const isInvite = new URLSearchParams(location.search).has("invite");
     return location.pathname === "/" && !isInvite ? <Landing /> : <Login />;
+  }
+
+  // A customer gets their own shell, whatever the URL says. Not the staff
+  // layout with items filtered out: a client should never be one CSS rule or
+  // one stale permission away from an analyst's screen.
+  if (store.user?.is_portal_user) {
+    return <ScrollToTop><Portal /></ScrollToTop>;
   }
 
   const logout = () => { resetSocket(); dispatch({ type: "logout" }); navigate("/"); };

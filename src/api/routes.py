@@ -311,6 +311,45 @@ def add_document(user, cid):
     return jsonify(doc.serialize()), 201
 
 
+@api.route("/customers/<int:cid>/documents/<int:did>/review", methods=["POST"])
+@permission_required("document.verify")
+def review_document(user, cid, did):
+    """Accept a document, or return it to the customer with a reason.
+
+    The reason is shown to the customer, so it describes the *document* — not
+    why it mattered. A closed list covers the usual cases; free text stays
+    available because the analyst knows their file.
+    """
+    from api.portal import REJECTION_REASONS
+    customer = _get_customer_for(user, cid)
+    doc = Document.query.filter_by(id=did, customer_id=customer.id).first()
+    if doc is None:
+        raise APIException("Document not found", status_code=404)
+    body = request.get_json(silent=True) or {}
+    decision = (body.get("decision") or "").upper()
+
+    if decision == "ACCEPT":
+        doc.status = "VERIFIED"
+        doc.rejection_reason = None
+    elif decision == "RETURN":
+        code = (body.get("reason_code") or "").upper()
+        reason = REJECTION_REASONS.get(code) or (body.get("reason") or "").strip()
+        if not reason:
+            raise APIException("A reason is required to return a document",
+                               status_code=400)
+        doc.status = "PENDING"
+        doc.rejection_reason = reason[:300]
+    else:
+        raise APIException("decision must be ACCEPT or RETURN", status_code=400)
+
+    audit.record("DOCUMENT_REVIEWED", "document", doc.id, actor=user,
+                 new_value=decision, reason=doc.rejection_reason or "accepted")
+    db.session.commit()
+    requirement_engine.evaluate(customer)
+    db.session.commit()
+    return jsonify(doc.serialize()), 200
+
+
 @api.route("/customers/<int:cid>/documents/<int:did>", methods=["DELETE"])
 @permission_required("document.upload")
 def delete_document(user, cid, did):

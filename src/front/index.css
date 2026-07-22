@@ -508,3 +508,43 @@ h1, h2, h3, h4, .co-serif {
 .ns-name { flex: 1; color: var(--co-ink); }
 .ns-meta { font-size: .72rem; color: var(--co-muted); white-space: nowrap; }
 .ns-warn { color: var(--sev-high); font-size: .8rem; }
+
+/* ---- Customer portal (pages/Portal.jsx) --------------------------------
+   Its own shell, not the staff one with things hidden: lighter, calmer, and
+   with no navigation into the platform. */
+.pt-shell { min-height: 100vh; background: var(--co-bg); }
+.pt-top {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: .8rem 1.4rem; background: var(--co-surface);
+  border-bottom: 1px solid var(--co-border);
+}
+.pt-brand { font-weight: 700; display: flex; align-items: center; gap: .5rem; }
+.pt-dot {
+  width: 10px; height: 10px; border-radius: 50%; background: var(--co-primary);
+  display: inline-block;
+}
+.pt-main { max-width: 860px; margin: 0 auto; padding: 1.6rem 1.2rem 3rem; }
+.pt-main h3 { font-family: var(--serif); }
+
+.pt-progress { margin: 1rem 0 1.2rem; }
+.pt-progress-head { display: flex; justify-content: space-between; font-size: .88rem; }
+.pt-bar {
+  height: 8px; border-radius: 999px; background: #e7e9ee; margin-top: .35rem;
+  overflow: hidden;
+}
+.pt-bar-fill { height: 100%; background: var(--sev-low); transition: width .3s ease; }
+
+.pt-tabs { display: flex; gap: .4rem; flex-wrap: wrap; margin: 1rem 0; }
+.pt-tab {
+  border: 1px solid var(--co-border); background: var(--co-surface);
+  border-radius: 999px; padding: .4rem .85rem; font-size: .86rem; cursor: pointer;
+}
+.pt-tab.active { background: var(--co-primary); color: #fff; border-color: var(--co-primary); }
+
+.pt-thread { display: flex; flex-direction: column; gap: .5rem; max-height: 22rem; overflow-y: auto; }
+.pt-suggest { display: flex; flex-wrap: wrap; gap: .4rem; }
+.pt-msg {
+  align-self: flex-start; max-width: 80%; padding: .55rem .8rem;
+  border-radius: 12px; background: #eef1f6; font-size: .9rem; white-space: pre-wrap;
+}
+.pt-msg.mine { align-self: flex-end; background: var(--co-primary); color: #fff; }

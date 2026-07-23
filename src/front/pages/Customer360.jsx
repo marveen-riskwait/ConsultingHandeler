@@ -130,6 +130,9 @@ export const Customer360 = () => {
   const startReview = async (rid) => {
     try { await api.startReview(rid); await load(); } catch (err) { setError(err.message); }
   };
+  const completeTask = async (tid) => {
+    try { await api.completeTask(tid); await load(); } catch (err) { setError(err.message); }
+  };
   // Completing a review is a decision, not a click: an inline panel asks for
   // approve/reject + a reason (same discipline as workflow step findings).
   const completeReview = async (rid) => {
@@ -473,6 +476,13 @@ export const Customer360 = () => {
                 <span className={`dotsev ${t.priority}`} />
                 <div className="grow"><div className="title">{t.title}</div><div className="meta">{t.task_type}</div></div>
                 <span className={`chip ${t.priority}`}>{t.priority}</span>
+                {can(store.user, "task.complete") && (
+                  <button className="btn btn-sm btn-outline-success"
+                    title="Mark this task as done (audited)"
+                    onClick={() => completeTask(t.id)}>
+                    <i className="fa-solid fa-check" /> Done
+                  </button>
+                )}
               </div>
             ))}
             </div>

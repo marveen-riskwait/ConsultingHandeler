@@ -19,10 +19,15 @@ export const Regulatory = () => {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  // Assessing a change opens an inline panel (notes optional) — no browser prompt.
+  const [assessing, setAssessing] = useState(null);   // change id
+  const [notes, setNotes] = useState("");
   const assess = async (id) => {
-    const notes = window.prompt("Assessment notes (optional):") || "";
-    try { await api.assessRegulatoryChange(id, notes); load(); }
-    catch (e) { setError(e.message); }
+    try {
+      await api.assessRegulatoryChange(id, notes.trim());
+      setAssessing(null); setNotes("");
+      load();
+    } catch (e) { setError(e.message); }
   };
 
   if (error) return <div className="alert alert-danger">{error}</div>;
@@ -57,10 +62,27 @@ export const Regulatory = () => {
                     <div className="meta">detected {fmt(ch.detected_at)} · {ch.status}</div>
                   </div>
                   <span className={`chip ${ch.impact_level === "HIGH" ? "CRITICAL" : ch.impact_level === "MEDIUM" ? "MEDIUM" : "INFO"}`}>{ch.impact_level}</span>
-                  {ch.status !== "ASSESSED" && canManage && (
-                    <button className="btn btn-sm btn-co" onClick={() => assess(ch.id)}>Assess impact</button>
+                  {ch.status !== "ASSESSED" && canManage && assessing !== ch.id && (
+                    <button className="btn btn-sm btn-co"
+                      onClick={() => { setAssessing(ch.id); setNotes(""); }}>Assess impact</button>
                   )}
                 </div>
+                {assessing === ch.id && (
+                  <div className="wf-complete" style={{ marginLeft: "1.4rem" }}>
+                    <label className="cd-label">Assessment notes (optional, audited)</label>
+                    <textarea className="form-control form-control-sm" rows={2}
+                      placeholder="Context for this impact assessment…"
+                      value={notes} autoFocus
+                      onChange={(e) => setNotes(e.target.value)} />
+                    <div className="d-flex gap-2" style={{ marginTop: ".45rem" }}>
+                      <button className="btn btn-sm btn-outline-secondary"
+                        onClick={() => { setAssessing(null); setNotes(""); }}>Cancel</button>
+                      <button className="btn btn-sm btn-co" onClick={() => assess(ch.id)}>
+                        Run assessment
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {ch.summary && <div className="muted" style={{ fontSize: ".82rem", paddingLeft: "1.4rem" }}>{ch.summary}</div>}
                 {ch.assessment && (
                   <div style={{ paddingLeft: "1.4rem", marginTop: ".3rem", display: "flex", flexWrap: "wrap", gap: ".35rem" }}>

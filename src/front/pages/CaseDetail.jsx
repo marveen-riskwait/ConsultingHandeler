@@ -37,12 +37,17 @@ export const CaseDetail = () => {
       await load();
     } catch (e) { setError(e.message); }
   };
-  const approveStep = async (instId, decision) => {
-    const r = window.prompt(`${decision === "APPROVE" ? "Approval" : "Rejection"} reason (audited):`);
-    if (!r) return;
+  // Senior approval is a decision like any other: an inline panel with a
+  // mandatory reason, not a browser prompt.
+  const [approving, setApproving] = useState(null);     // "APPROVE" | "REJECT" | null
+  const [approvalReason, setApprovalReason] = useState("");
+  const approveStep = async (instId) => {
     setError(null);
-    try { await api.approveStep(instId, decision, r); await load(); }
-    catch (e) { setError(e.message); }
+    try {
+      await api.approveStep(instId, approving, approvalReason.trim());
+      setApproving(null); setApprovalReason("");
+      await load();
+    } catch (e) { setError(e.message); }
   };
 
   if (error && !data) return <div className="alert alert-danger">{error}</div>;
@@ -162,14 +167,41 @@ export const CaseDetail = () => {
                       )
                     )}
                       {isRejected && <div className="meta" style={{ color: "var(--sev-critical)" }}>rejected</div>}
+                      {s.status === "ACTIVE" && s.requires_approval && !isApproved && !isRejected && approving && (
+                        <div className="wf-complete">
+                          <label className="cd-label">
+                            {approving === "APPROVE" ? "Approval" : "Rejection"} reason (audited)
+                          </label>
+                          <textarea className="form-control form-control-sm" rows={2}
+                            placeholder={approving === "APPROVE"
+                              ? "What supports this approval?"
+                              : "Why is this step rejected?"}
+                            value={approvalReason} autoFocus
+                            onChange={(e) => setApprovalReason(e.target.value)} />
+                          <div className="d-flex gap-2" style={{ marginTop: ".45rem" }}>
+                            <button className="btn btn-sm btn-outline-secondary"
+                              onClick={() => { setApproving(null); setApprovalReason(""); }}>
+                              Cancel
+                            </button>
+                            <button
+                              className={`btn btn-sm ${approving === "APPROVE" ? "btn-outline-success" : "btn-outline-danger"}`}
+                              disabled={approvalReason.trim().length < 5}
+                              onClick={() => approveStep(workflow.id)}>
+                              {approving === "APPROVE" ? "Approve step" : "Reject step"}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    {s.status === "ACTIVE" && s.requires_approval && !isApproved && !isRejected && can(store.user, "case.approve") && (
+                    {s.status === "ACTIVE" && s.requires_approval && !isApproved && !isRejected && can(store.user, "case.approve") && !approving && (
                       <>
-                        <button className="btn btn-sm btn-outline-success" onClick={() => approveStep(workflow.id, "APPROVE")}>Approve</button>
-                        <button className="btn btn-sm btn-outline-danger" onClick={() => approveStep(workflow.id, "REJECT")}>Reject</button>
+                        <button className="btn btn-sm btn-outline-success"
+                          onClick={() => { setApproving("APPROVE"); setApprovalReason(""); }}>Approve</button>
+                        <button className="btn btn-sm btn-outline-danger"
+                          onClick={() => { setApproving("REJECT"); setApprovalReason(""); }}>Reject</button>
                       </>
                     )}
-                    
+
                   </div>
                 );
               })}

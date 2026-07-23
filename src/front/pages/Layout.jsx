@@ -5,6 +5,8 @@ import { Sidebar } from "../components/Sidebar";
 import { Login } from "./Login";
 import { Landing } from "./Landing";
 import { Portal } from "./Portal";
+import { VerifyEmail } from "./VerifyEmail";
+import { ResetPassword } from "./ResetPassword";
 import useGlobalReducer from "../hooks/useGlobalReducer";
 import { api } from "../services/api";
 import { resetSocket } from "../services/socket";
@@ -41,6 +43,10 @@ export const Layout = () => {
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, [store.token]);
+
+  // Public auth pages reachable from emailed links, logged in or not.
+  if (location.pathname === "/verify-email") return <VerifyEmail />;
+  if (location.pathname === "/reset-password") return <ResetPassword />;
 
   if (!store.token) {
     // Invitation links (?invite=TOKEN) must reach the accept screen, never the

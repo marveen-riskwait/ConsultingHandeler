@@ -18,6 +18,8 @@ import { Audit } from "./pages/Audit";
 import { Assistant } from "./pages/Assistant";
 import { KycForm } from "./pages/KycForm";
 import { Chat } from "./pages/Chat";
+import { VerifyEmail } from "./pages/VerifyEmail";
+import { ResetPassword } from "./pages/ResetPassword";
 
 export const router = createBrowserRouter(
   createRoutesFromElements(
@@ -26,6 +28,10 @@ export const router = createBrowserRouter(
       {/* Logged-out: Layout renders the Login screen for this path. Logged-in
           visitors landing on /login are bounced to their workspace. */}
       <Route path="/login" element={<Navigate to="/" replace />} />
+      {/* Public pages from emailed links — Layout renders them by pathname
+          before the auth gate; the route entries just let React Router match. */}
+      <Route path="/verify-email" element={<VerifyEmail />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/assistant" element={<Assistant />} />
       <Route path="/chat" element={<Chat />} />
       <Route path="/customers" element={<Customers />} />

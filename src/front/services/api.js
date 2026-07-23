@@ -70,6 +70,10 @@ export const api = {
   register: (payload) => request("/auth/register", { method: "POST", body: payload }),
   me: () => request("/auth/me"),
   logout: () => request("/auth/logout", { method: "POST" }),
+  verifyEmail: (token) => request("/auth/verify-email", { method: "POST", body: { token } }),
+  resendVerification: () => request("/auth/resend-verification", { method: "POST" }),
+  forgotPassword: (email) => request("/auth/forgot-password", { method: "POST", body: { email } }),
+  resetPassword: (token, password) => request("/auth/reset-password", { method: "POST", body: { token, password } }),
 
   // customers
   customers: (archived) => request(`/customers${archived ? "?archived=1" : ""}`),

@@ -14,6 +14,16 @@ export const Login = () => {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
+  const [sentReset, setSentReset] = useState(false);
+
+  const submitForgot = async (e) => {
+    e.preventDefault();
+    setBusy(true); setError(null);
+    try { await api.forgotPassword(email); setSentReset(true); }
+    catch (e2) { setError(e2.message); }
+    finally { setBusy(false); }
+  };
+
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
@@ -35,6 +45,41 @@ export const Login = () => {
       setBusy(false);
     }
   };
+
+  if (mode === "forgot") {
+    return (
+      <div className="login-wrap">
+        <form className="login-card" onSubmit={submitForgot}>
+          <h4 style={{ marginTop: 0 }}>Reset your password</h4>
+          {sentReset ? (
+            <>
+              <p className="muted" style={{ fontSize: ".88rem" }}>
+                If an account exists for that address, a reset link is on its
+                way. Check your inbox.
+              </p>
+              <a href="#" onClick={(e) => { e.preventDefault(); setMode("login"); setSentReset(false); }}>Back to sign in</a>
+            </>
+          ) : (
+            <>
+              <p className="muted" style={{ fontSize: ".85rem" }}>
+                Enter your email and we will send you a reset link.
+              </p>
+              {error && <div className="alert alert-danger py-2">{error}</div>}
+              <label className="form-label">Email</label>
+              <input className="form-control" type="email" value={email}
+                onChange={(e) => setEmail(e.target.value)} required />
+              <button className="btn btn-co mt-3" disabled={busy}>
+                {busy ? "Sending…" : "Send reset link"}
+              </button>
+              <div className="text-center mt-3" style={{ fontSize: ".85rem" }}>
+                <a href="#" onClick={(e) => { e.preventDefault(); setMode("login"); }}>Back to sign in</a>
+              </div>
+            </>
+          )}
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div className="login-wrap">
@@ -84,7 +129,12 @@ export const Login = () => {
 
         <div className="text-center mt-3" style={{ fontSize: ".85rem" }}>
           {mode === "login" ? (
-            <span className="muted">New here? <a href="#" onClick={(e) => { e.preventDefault(); setMode("register"); }}>Create an organization</a></span>
+            <>
+              <span className="muted">New here? <a href="#" onClick={(e) => { e.preventDefault(); setMode("register"); }}>Create an organization</a></span>
+              <div className="mt-1">
+                <a href="#" onClick={(e) => { e.preventDefault(); setMode("forgot"); setError(null); }}>Forgot your password?</a>
+              </div>
+            </>
           ) : (
             <span className="muted">Have an account? <a href="#" onClick={(e) => { e.preventDefault(); setMode("login"); }}>Sign in</a></span>
           )}

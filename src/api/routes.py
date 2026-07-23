@@ -140,6 +140,7 @@ def register():
         role_id=role.id if role else None,
         organization_id=org.id,
     )
+    user.email_verified = False   # self-service: must confirm the address
     db.session.add(user)
     db.session.flush()
     db.session.add(OrganizationMembership(
@@ -147,7 +148,12 @@ def register():
     audit.record("USER_CREATED", "user", user.id, actor_label=email,
                  new_value=role_name, reason="self-registration")
     db.session.commit()
-    return jsonify({"token": make_token(user), "user": user.serialize()}), 201
+    db.session.commit()
+    try:
+        _send_verification(user)
+    except Exception:
+        pass   # a mail hiccup must not fail the signup; they can resend
+    return _auth_response(user, status=201)
 
 
 @api.route("/auth/login", methods=["POST"])
@@ -208,6 +214,93 @@ def logout(user):
     resp = jsonify({"ok": True})
     unset_jwt_cookies(resp)
     return resp, 200
+
+
+def _app_link(path):
+    base = (os.getenv("PORTAL_URL") or os.getenv("APP_URL")
+            or request.host_url.rstrip("/"))
+    return f"{base.rstrip('/')}{path}"
+
+
+def _send_verification(user):
+    from api.models import email_tokens
+    from api.integrations import mailer
+    secret = email_tokens.issue(user, "VERIFY_EMAIL")
+    org = user.organization.name if user.organization else None
+    link = _app_link(f"/verify-email?token={secret}")
+    return mailer.notify_verify_email(user, org, link)
+
+
+@api.route("/auth/verify-email", methods=["POST"])
+@_rate_limit("10 per minute")
+def verify_email():
+    """Confirm an address from the emailed link. Public: the token is the proof."""
+    from api.models import email_tokens
+    secret = ((request.get_json(silent=True) or {}).get("token") or "").strip()
+    uid = email_tokens.consume_by_secret("VERIFY_EMAIL", secret)
+    if uid is None:
+        raise APIException("This link is invalid or has expired.", status_code=400)
+    user = User.query.get(uid)
+    if user is None:
+        raise APIException("Account not found", status_code=404)
+    user.email_verified = True
+    audit.record("EMAIL_VERIFIED", "user", user.id, actor=user, commit=True)
+    return jsonify({"verified": True}), 200
+
+
+@api.route("/auth/resend-verification", methods=["POST"])
+@login_required
+@_rate_limit("3 per hour")
+def resend_verification(user):
+    if user.email_verified:
+        return jsonify({"already_verified": True}), 200
+    result = _send_verification(user)
+    return jsonify({"sent": result.get("sent", False)}), 200
+
+
+@api.route("/auth/forgot-password", methods=["POST"])
+@_rate_limit("5 per hour")
+def forgot_password():
+    """Start a reset. Always answers the same, whether or not the address
+    exists — otherwise this becomes an account-enumeration oracle."""
+    from api.models import email_tokens
+    from api.integrations import mailer
+    email = ((request.get_json(silent=True) or {}).get("email") or "").strip().lower()
+    user = User.query.filter_by(email=email).first() if email else None
+    if user is not None and user.is_active:
+        secret = email_tokens.issue(user, "RESET_PASSWORD")
+        org = user.organization.name if user.organization else None
+        link = _app_link(f"/reset-password?token={secret}")
+        mailer.notify_password_reset(user, org, link)
+        audit.record("PASSWORD_RESET_REQUESTED", "user", user.id,
+                     actor_label=email, commit=True)
+    return jsonify({"ok": True}), 200
+
+
+@api.route("/auth/reset-password", methods=["POST"])
+@_rate_limit("10 per hour")
+def reset_password():
+    """Set a new password from the emailed link, then revoke the token."""
+    from api.models import email_tokens
+    from api.security import password_problem
+    body = request.get_json(silent=True) or {}
+    secret = (body.get("token") or "").strip()
+    password = body.get("password") or ""
+    problem = password_problem(password)
+    if problem:
+        raise APIException(problem, status_code=400)
+    uid = email_tokens.consume_by_secret("RESET_PASSWORD", secret)
+    if uid is None:
+        raise APIException("This reset link is invalid or has expired.",
+                           status_code=400)
+    user = User.query.get(uid)
+    if user is None:
+        raise APIException("Account not found", status_code=404)
+    user.password = hash_password(password)
+    user.failed_logins = 0
+    user.locked_until = None
+    audit.record("PASSWORD_RESET", "user", user.id, actor=user, commit=True)
+    return jsonify({"reset": True}), 200
 
 
 @api.route("/auth/refresh", methods=["POST"])
@@ -1186,6 +1279,8 @@ def accept_invitation():
         # from the token — the registration form has no say in it.
         customer_id=inv.customer_id,
     )
+    # They received the invitation at this address, so it is already proven.
+    new_user.email_verified = True   # receiving the invite proved the address
     db.session.add(new_user)
     db.session.flush()
     db.session.add(OrganizationMembership(
@@ -1198,6 +1293,7 @@ def accept_invitation():
     audit.record("INVITATION_ACCEPTED", "user", new_user.id,
                  actor_label=inv.email, new_value=inv.proposed_role)
     db.session.commit()
+    _send_verification(new_user)
     return _auth_response(new_user, status=201)
 
 

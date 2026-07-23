@@ -43,6 +43,12 @@ class User(db.Model):
     full_name: Mapped[str] = mapped_column(String(120), nullable=True)
     role: Mapped[str] = mapped_column(String(40), nullable=False, default="KYC_ANALYST")
     is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=True)
+    # An address is unverified until the holder clicks the link. New self-service
+    # signups start False; invited users are verified by accepting the invite
+    # (receiving it proved they control the address). server_default '1'
+    # grandfathers everyone who existed before this column.
+    email_verified: Mapped[bool] = mapped_column(
+        Boolean(), nullable=False, default=False, server_default="1")
     # Brute-force defence: consecutive failed logins, and a lock that lifts
     # itself after a cooldown so a locked-out real user is not stranded.
     failed_logins: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
@@ -114,6 +120,7 @@ class User(db.Model):
             "organization_id": self.organization_id,
             "customer_id": self.customer_id,
             "is_portal_user": self.is_portal_user(),
+            "email_verified": self.email_verified,
             "extra_permissions": sorted(p.code for p in self.extra_permissions),
         }
         if with_permissions:

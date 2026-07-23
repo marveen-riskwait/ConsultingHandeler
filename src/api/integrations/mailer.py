@@ -158,3 +158,31 @@ def notify_action_needed(user, organization_name, what="something"):
         f"{_sign_in_line()}\n\n"
         "This message is automated — please do not reply to it. Use the "
         "messages section of the portal to reach the team.\n")
+
+
+def notify_verify_email(user, organization_name, link):
+    name = (user.full_name or "").split(" ")[0] or "there"
+    firm = organization_name or "Compliance OS"
+    return send(
+        user.email, f"{firm}: confirm your email address",
+        f"Hello {name},\n\nConfirm your email address to activate your "
+        f"{firm} account:\n{link}\n\nThe link expires in 24 hours. If you did "
+        "not create this account, you can ignore this message.\n")
+
+
+def notify_password_reset(user, organization_name, link):
+    name = (user.full_name or "").split(" ")[0] or "there"
+    firm = organization_name or "Compliance OS"
+    return send(
+        user.email, f"{firm}: reset your password",
+        f"Hello {name},\n\nWe received a request to reset your password. Use "
+        f"this link within one hour:\n{link}\n\nIf you did not ask for this, "
+        "ignore this message — your password stays unchanged.\n")
+
+
+def send_login_otp(user, organization_name, code):
+    firm = organization_name or "Compliance OS"
+    return send(
+        user.email, f"{firm}: your sign-in code",
+        f"Your one-time sign-in code is: {code}\n\nIt expires in 10 minutes. "
+        "If you were not signing in, someone has your password — change it.\n")

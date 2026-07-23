@@ -435,7 +435,11 @@ const IntegrationsTab = ({ me }) => {
     catch (e) { setError(e.message); }
   };
   const saveCred = async (p) => {
-    const f = credForm[p.id] || {};
+    const raw = credForm[p.id] || {};
+    // The key-name input shows "api_key" as its default — the state only
+    // holds a value once the user types. Mirror that default here, or the
+    // untouched field is treated as empty and the save is refused.
+    const f = { ...raw, key_name: (raw.key_name ?? "api_key").trim() };
     setNotice(null);
     // A silent return here once cost a real user their API key setup: they
     // filled one field, clicked, and nothing happened. Say what's missing.

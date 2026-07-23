@@ -1816,6 +1816,25 @@ def set_provider_credential(user, pid):
     return jsonify({"provider_id": pid, "key_name": key_name, "stored": True}), 201
 
 
+@api.route("/providers/<int:pid>/credentials", methods=["DELETE"])
+@permission_required("organization.update")
+def delete_provider_credential(user, pid):
+    """Remove a stored credential by key name — a mistyped one must be
+    correctable from the UI, not only by overwriting it."""
+    provider = Provider.query.get(pid)
+    if provider is None or provider.organization_id != user.organization_id:
+        raise APIException("Provider not found", status_code=404)
+    key_name = ((request.get_json(silent=True) or {}).get("key_name") or "").strip()
+    cred = (ProviderCredential.query
+            .filter_by(provider_id=pid, key_name=key_name).first())
+    if cred is None:
+        raise APIException("No credential with that key name", status_code=404)
+    db.session.delete(cred)
+    audit.record("PROVIDER_CREDENTIAL_DELETED", "provider", pid, actor=user,
+                 old_value=key_name, commit=True)
+    return jsonify({"provider_id": pid, "key_name": key_name, "deleted": True}), 200
+
+
 @api.route("/providers/<int:pid>/health", methods=["POST"])
 @permission_required("organization.view")
 def provider_health(user, pid):

@@ -444,12 +444,28 @@ const IntegrationsTab = ({ me }) => {
                + `(e.g. "api_key") and the secret value.`);
       return;
     }
+    // Same real-world incident: what was pasted as the "key" was the URL of
+    // the provider's developer portal. A URL is never an API secret.
+    if (/^https?:\/\//i.test(f.secret_value.trim())) {
+      setError(`Nothing saved — the secret looks like a URL. Paste the API key `
+               + `itself (a short token from the provider's "API keys" page), `
+               + `not a web address.`);
+      return;
+    }
     setError(null);
     try {
       await api.setProviderCredential(p.id, f);
       setNotice(`Saved "${f.key_name.trim()}" for ${p.name}. The value is kept `
                 + `server-side and never displayed again.`);
       setCredForm({ ...credForm, [p.id]: {} });
+      load();
+    } catch (e) { setError(e.message); }
+  };
+  const removeCred = async (p, keyName) => {
+    setNotice(null); setError(null);
+    try {
+      await api.deleteProviderCredential(p.id, keyName);
+      setNotice(`Removed "${keyName.slice(0, 24)}${keyName.length > 24 ? "…" : ""}" from ${p.name}.`);
       load();
     } catch (e) { setError(e.message); }
   };
@@ -468,11 +484,20 @@ const IntegrationsTab = ({ me }) => {
                 <b>{p.name}</b> <span className="muted" style={{ fontSize: ".82rem" }}>· {p.provider_type} · adapter: {p.adapter}</span>
                 {p.health && <span className={`chip ${HEALTH_SEV[p.health.status] || "INFO"}`} style={{ marginLeft: ".4rem" }}>{p.health.status}</span>}
               </div>
-              {p.credential_keys.length
-                ? <span className="chip LOW" title="Stored credential key names — values are never shown">
-                    <i className="fa-solid fa-key" /> {p.credential_keys.join(", ")}
-                  </span>
-                : <span className="chip MEDIUM">no credentials</span>}
+              {p.credential_keys.length === 0 &&
+                <span className="chip MEDIUM">no credentials</span>}
+              {p.credential_keys.map((k) => (
+                <span className="chip LOW" key={k}
+                  title="Stored credential key name — the value is never shown">
+                  <i className="fa-solid fa-key" />{" "}
+                  {k.length > 18 ? `${k.slice(0, 18)}…` : k}
+                  {canManage && (
+                    <button type="button" className="kf-doc-remove"
+                      title="Remove this credential"
+                      onClick={() => removeCred(p, k)}>×</button>
+                  )}
+                </span>
+              ))}
               {canManage && <button className="btn btn-sm btn-outline-secondary" onClick={() => checkHealth(p)}>Health</button>}
               {canManage && (
                 <button className={`btn btn-sm ${p.enabled ? "btn-outline-danger" : "btn-outline-success"}`} onClick={() => toggle(p)}>
@@ -481,21 +506,28 @@ const IntegrationsTab = ({ me }) => {
               )}
             </div>
             {canManage && (
-              <div className="row g-1 align-items-end" style={{ marginTop: ".4rem", paddingLeft: "1.4rem" }}>
-                <div className="col-12 col-md-3">
-                  <input className="form-control form-control-sm" placeholder="key (e.g. api_key)"
-                    value={(credForm[p.id] || {}).key_name || ""}
-                    onChange={(e) => setCredForm({ ...credForm, [p.id]: { ...(credForm[p.id] || {}), key_name: e.target.value } })} />
+              <>
+                <div className="row g-1 align-items-end" style={{ marginTop: ".4rem", paddingLeft: "1.4rem" }}>
+                  <div className="col-12 col-md-3">
+                    <input className="form-control form-control-sm" placeholder="key (e.g. api_key)"
+                      value={(credForm[p.id] || {}).key_name ?? "api_key"}
+                      onChange={(e) => setCredForm({ ...credForm, [p.id]: { ...(credForm[p.id] || {}), key_name: e.target.value } })} />
+                  </div>
+                  <div className="col-8 col-md-4">
+                    <input type="password" className="form-control form-control-sm" placeholder="secret (never displayed)"
+                      value={(credForm[p.id] || {}).secret_value || ""}
+                      onChange={(e) => setCredForm({ ...credForm, [p.id]: { ...(credForm[p.id] || {}), secret_value: e.target.value } })} />
+                  </div>
+                  <div className="col-4 col-md-2">
+                    <button className="btn btn-sm btn-co w-100" onClick={() => saveCred(p)}>Save credential</button>
+                  </div>
                 </div>
-                <div className="col-8 col-md-4">
-                  <input type="password" className="form-control form-control-sm" placeholder="secret (never displayed)"
-                    value={(credForm[p.id] || {}).secret_value || ""}
-                    onChange={(e) => setCredForm({ ...credForm, [p.id]: { ...(credForm[p.id] || {}), secret_value: e.target.value } })} />
+                <div className="meta" style={{ paddingLeft: "1.4rem", marginTop: ".2rem" }}>
+                  The first field is the <b>name</b> the adapter looks up — for an API
+                  key, keep it as <code>api_key</code>. The secret itself goes in the
+                  second field only.
                 </div>
-                <div className="col-4 col-md-2">
-                  <button className="btn btn-sm btn-co w-100" onClick={() => saveCred(p)}>Save credential</button>
-                </div>
-              </div>
+              </>
             )}
           </div>
         ))}

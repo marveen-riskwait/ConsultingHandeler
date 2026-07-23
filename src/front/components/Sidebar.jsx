@@ -50,9 +50,11 @@ export const Sidebar = ({ collapsed, onToggle }) => {
     <aside className="co-sidebar">
       <div className="co-sidebar-brand">
         <span className="dot" /> <span className="co-brand-txt">Compliance OS</span>
+        {/* The classic "collapsible sidebar" panel icon (user's explicit pick),
+            same in both states — the sidebar itself shows which one you're in. */}
         <button type="button" className="co-nav-toggle" onClick={onToggle}
           title={collapsed ? "Expand navigation" : "Collapse navigation"}>
-          <i className={`fa-solid fa-angles-${collapsed ? "right" : "left"}`} />
+          <i className="fa-solid fa-table-columns" />
         </button>
       </div>
 

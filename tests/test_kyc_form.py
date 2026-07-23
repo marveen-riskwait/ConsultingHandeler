@@ -174,3 +174,47 @@ def test_form_edit_requires_permission(client, tokens):
     r = client.post(f"/api/customers/{cid}/kyc-form", headers=auth(outsider),
                     json={"fields": {"occupation": "Spy"}})
     assert r.status_code == 404  # other org -> not found
+
+
+def test_form_address_syncs_to_customer_addresses(client, tokens):
+    """The structured address block mirrors into the Address history: one
+    current RESIDENTIAL row, no duplicate on an unchanged re-save, and a
+    change supersedes (history kept)."""
+    t = tokens["analyst@test.io"]
+    cid = _fresh(client, t, "Address Sync Person")
+
+    addr = {"residential_street_number": "12",
+            "residential_street_name": "Rue de la Paix",
+            "residential_city": "Luxembourg",
+            "residential_postal_code": "L-1330",
+            "residential_country": "Luxembourg"}
+    r = client.post(f"/api/customers/{cid}/kyc-form", headers=auth(t),
+                    json={"fields": addr})
+    assert r.status_code == 200
+
+    rows = client.get(f"/api/customers/{cid}/addresses",
+                      headers=auth(t)).get_json()
+    assert len(rows) == 1
+    a = rows[0]
+    assert a["line1"] == "12 Rue de la Paix"
+    assert a["postal_code"] == "L-1330"
+    assert a["city"] == "Luxembourg"
+    assert a["is_current"] is True
+
+    # Unchanged re-save: no new field writes, no address churn.
+    client.post(f"/api/customers/{cid}/kyc-form", headers=auth(t),
+                json={"fields": addr})
+    rows = client.get(f"/api/customers/{cid}/addresses",
+                      headers=auth(t)).get_json()
+    assert len(rows) == 1
+
+    # Moving supersedes the old address instead of overwriting it.
+    client.post(f"/api/customers/{cid}/kyc-form", headers=auth(t),
+                json={"fields": {**addr, "residential_street_number": "44",
+                                 "residential_street_name": "Avenue Kennedy"}})
+    rows = client.get(f"/api/customers/{cid}/addresses",
+                      headers=auth(t)).get_json()
+    assert len(rows) == 2
+    current = [a for a in rows if a["is_current"]]
+    assert len(current) == 1
+    assert current[0]["line1"] == "44 Avenue Kennedy"

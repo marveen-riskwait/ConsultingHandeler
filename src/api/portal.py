@@ -197,6 +197,8 @@ def portal_save_form(_user):
         if kyc_service.set_field(customer, key, value, source="portal",
                                  actor=user):
             saved += 1
+    if saved:
+        kyc_service.sync_address_from_form(customer, actor=user)
     db.session.commit()
     requirement_engine.evaluate(customer)
     db.session.commit()

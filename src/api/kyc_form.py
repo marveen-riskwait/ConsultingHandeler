@@ -116,9 +116,17 @@ FORM_SECTIONS = [
         "applies": "INDIVIDUAL", "min_risk_rank": 0,
         "description": "Residential address and verified contact points.",
         "fields": [
-            _f("residential_address", "Residential address", "textarea",
-               required=True, category="ADDRESS",
-               help="Street, number, city, postal code, country."),
+            # Structured, in the same shape as the Addresses card on the
+            # customer file — saving here syncs the current RESIDENTIAL
+            # address there (kyc_service.sync_address_from_form), so nobody
+            # retypes what the form already collected.
+            _f("residential_street_number", "Street number", category="ADDRESS"),
+            _f("residential_street_name", "Street name", required=True,
+               category="ADDRESS"),
+            _f("residential_city", "City", required=True, category="ADDRESS"),
+            _f("residential_postal_code", "Postal code", category="ADDRESS"),
+            _f("residential_country", "Country", "country", required=True,
+               category="ADDRESS"),
             _f("previous_address", "Previous address (if moved < 2 years ago)",
                "textarea", category="ADDRESS"),
             _f("phone_number", "Phone number", required=True, category="ADDRESS"),

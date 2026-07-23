@@ -2412,6 +2412,9 @@ def save_kyc_form(user, cid):
                               source="kyc_form", actor=user)
         saved += 1
 
+    if saved:
+        kyc_service.sync_address_from_form(customer, actor=user)
+
     return jsonify({"saved": saved,
                     "completeness": requirement_engine.summary(customer)}), 200
 

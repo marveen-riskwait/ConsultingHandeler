@@ -54,7 +54,7 @@ export const Customer360 = () => {
   const [error, setError] = useState(null);
   const [screening, setScreening] = useState(false);
   const [ownerForm, setOwnerForm] = useState({ owner_name: "", owner_kind: "PERSON", relationship_type: "SHAREHOLDER", percentage: "", country: "" });
-  const [addrForm, setAddrForm] = useState({ line1: "", city: "", country: "" });
+  const [addrForm, setAddrForm] = useState({ number: "", street: "", city: "", postal_code: "", country: "" });
   const [fieldForm, setFieldForm] = useState({ field_key: "", value: "", source: "manual" });
   const [kyb, setKyb] = useState(null);
   const [kybBusy, setKybBusy] = useState(false);
@@ -158,8 +158,13 @@ export const Customer360 = () => {
     e.preventDefault();
     setError(null);
     try {
-      await api.addAddress(id, addrForm);
-      setAddrForm({ line1: "", city: "", country: "" });
+      // Same shape as the KYC form's address block; line1 = number + street.
+      await api.addAddress(id, {
+        line1: `${addrForm.number} ${addrForm.street}`.trim(),
+        city: addrForm.city, postal_code: addrForm.postal_code,
+        country: addrForm.country,
+      });
+      setAddrForm({ number: "", street: "", city: "", postal_code: "", country: "" });
       await load(); loadKyb();
     } catch (err) { setError(err.message); }
   };
@@ -652,7 +657,9 @@ export const Customer360 = () => {
                 <span className={`dotsev ${a.is_current ? "LOW" : "INFO"}`} />
                 <div className="grow">
                   <div className="title" style={a.is_current ? {} : { textDecoration: "line-through", opacity: 0.6 }}>
-                    {a.line1}{a.city ? `, ${a.city}` : ""}{a.country ? `, ${a.country}` : ""}
+                    {a.line1}
+                    {(a.postal_code || a.city) ? `, ${[a.postal_code, a.city].filter(Boolean).join(" ")}` : ""}
+                    {a.country ? `, ${a.country}` : ""}
                   </div>
                   <div className="meta">
                     {a.address_type} · {a.is_current ? "current" : `until ${fmt(a.valid_to)}`}
@@ -663,19 +670,27 @@ export const Customer360 = () => {
             ))}
             {can(store.user, "kyc.edit") && (
               <form onSubmit={submitAddress} className="row g-1 align-items-end" style={{ marginTop: ".6rem", borderTop: "1px solid var(--co-border)", paddingTop: ".6rem" }}>
-                <div className="col-12 col-md-5">
-                  <input className="form-control form-control-sm" placeholder="Street" required
-                    value={addrForm.line1} onChange={(e) => setAddrForm({ ...addrForm, line1: e.target.value })} />
+                <div className="col-3 col-md-2">
+                  <input className="form-control form-control-sm" placeholder="N°"
+                    value={addrForm.number} onChange={(e) => setAddrForm({ ...addrForm, number: e.target.value })} />
                 </div>
-                <div className="col-5 col-md-3">
+                <div className="col-9 col-md-10">
+                  <input className="form-control form-control-sm" placeholder="Street name" required
+                    value={addrForm.street} onChange={(e) => setAddrForm({ ...addrForm, street: e.target.value })} />
+                </div>
+                <div className="col-6 col-md-4">
                   <input className="form-control form-control-sm" placeholder="City"
                     value={addrForm.city} onChange={(e) => setAddrForm({ ...addrForm, city: e.target.value })} />
                 </div>
-                <div className="col-4 col-md-2">
+                <div className="col-6 col-md-3">
+                  <input className="form-control form-control-sm" placeholder="Postal code"
+                    value={addrForm.postal_code} onChange={(e) => setAddrForm({ ...addrForm, postal_code: e.target.value })} />
+                </div>
+                <div className="col-8 col-md-3">
                   <input className="form-control form-control-sm" placeholder="Country"
                     value={addrForm.country} onChange={(e) => setAddrForm({ ...addrForm, country: e.target.value })} />
                 </div>
-                <div className="col-3 col-md-2">
+                <div className="col-4 col-md-2">
                   <button className="btn btn-sm btn-co w-100">Add</button>
                 </div>
               </form>

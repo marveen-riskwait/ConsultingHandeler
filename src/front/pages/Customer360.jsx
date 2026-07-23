@@ -66,6 +66,7 @@ export const Customer360 = () => {
   const [kyb, setKyb] = useState(null);
   const [kybBusy, setKybBusy] = useState(false);
   const [openAlert, setOpenAlert] = useState(null);
+  const [openTask, setOpenTask] = useState(null);          // task whose details are unfolded
   const [openReview, setOpenReview] = useState(null);      // review whose details are unfolded
   const [completing, setCompleting] = useState(null);      // review being completed
   const [reviewForm, setReviewForm] = useState({ decision: "APPROVED", reason: "" });
@@ -493,20 +494,62 @@ export const Customer360 = () => {
             <div className="section-title">Open tasks {tasks.length > 0 && `(${tasks.length})`}</div>
             {tasks.length === 0 && <div className="muted" style={{ fontSize: ".88rem" }}>None.</div>}
             <div className="co-rows">
-            {tasks.map((t) => (
-              <div className="work-row" key={t.id}>
-                <span className={`dotsev ${t.priority}`} />
-                <div className="grow"><div className="title">{t.title}</div><div className="meta">{t.task_type}</div></div>
-                <span className={`chip ${t.priority}`}>{t.priority}</span>
-                {can(store.user, "task.complete") && (
-                  <button className="btn btn-sm btn-outline-success"
-                    title="Mark this task as done (audited)"
-                    onClick={() => completeTask(t.id)}>
-                    <i className="fa-solid fa-check" /> Done
+            {tasks.map((t) => {
+              const overdue = t.due_at && new Date(t.due_at) < new Date();
+              return (
+              <div key={t.id} style={{ borderBottom: "1px solid var(--co-border)" }}>
+                <div className="work-row" style={{ borderBottom: "none" }}>
+                  <span className={`dotsev ${t.priority}`} />
+                  <div className="grow">
+                    <div className="title">{t.title}</div>
+                    <div className="meta">
+                      {t.task_type}
+                      {t.due_at && <> · due <span style={overdue ? { color: "var(--sev-high)", fontWeight: 600 } : {}}>
+                        {new Date(t.due_at).toLocaleDateString()}{overdue ? " (overdue)" : ""}
+                      </span></>}
+                    </div>
+                  </div>
+                  <span className={`chip ${t.priority}`}>{t.priority}</span>
+                  <button className="btn btn-sm btn-outline-secondary"
+                    onClick={() => setOpenTask(openTask === t.id ? null : t.id)}>
+                    {openTask === t.id ? "Hide" : "Details"}
                   </button>
+                  {can(store.user, "task.complete") && (
+                    <button className="btn btn-sm btn-outline-success"
+                      title="Mark this task as done (audited)"
+                      onClick={() => completeTask(t.id)}>
+                      <i className="fa-solid fa-check" /> Done
+                    </button>
+                  )}
+                </div>
+                {openTask === t.id && (
+                  <div className="md-panel" style={{ marginLeft: "1.4rem" }}>
+                    {[["Type", t.task_type],
+                      ["Status", t.status],
+                      ["Due", t.due_at && `${new Date(t.due_at).toLocaleDateString()}${overdue ? " · overdue" : ""}`],
+                      ["Created", t.created_at && fmt(t.created_at)],
+                      ["Assigned to", t.assigned_to_name || "Unassigned"],
+                      ["Requirement", t.requirement_code],
+                    ].map(([label, value]) => value ? (
+                      <div className="md-row" key={label}>
+                        <span className="md-label">{label}</span>
+                        <span className="md-value">{value}</span>
+                      </div>
+                    ) : null)}
+                    {t.case_id && (
+                      <div className="md-row">
+                        <span className="md-label">Case</span>
+                        <span className="md-value">
+                          <Link to={`/cases/${t.case_id}`}>
+                            {t.case_title || `Case #${t.case_id}`}
+                          </Link>
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
-            ))}
+            );})}
             </div>
           </div>
         </div>

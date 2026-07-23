@@ -574,6 +574,17 @@ def customer_overview(user, cid):
                   .filter(Case.status != "CLOSED").all())
     tasks = (Task.query.filter_by(customer_id=cid)
              .filter(Task.status != "DONE").all())
+
+    def _task_detail(t):
+        """Task + the human names its ids stand for, so the fiche can show
+        who is on it and jump to the case that spawned it."""
+        data = t.serialize()
+        assignee = User.query.get(t.assigned_to) if t.assigned_to else None
+        data["assigned_to_name"] = (assignee.full_name or assignee.email) if assignee else None
+        parent = Case.query.get(t.case_id) if t.case_id else None
+        data["case_title"] = parent.title if parent else None
+        return data
+
     documents = Document.query.filter_by(customer_id=cid).all()
     events = (ComplianceEvent.query.filter_by(customer_id=cid)
               .order_by(ComplianceEvent.detected_at.desc()).limit(15).all())
@@ -599,7 +610,7 @@ def customer_overview(user, cid):
         "customer": customer.serialize(),
         "risk": latest.serialize() if latest else None,
         "open_cases": [c.serialize() for c in open_cases],
-        "tasks": [t.serialize() for t in tasks],
+        "tasks": [_task_detail(t) for t in tasks],
         "documents": [d.serialize() for d in documents],
         "screening_matches": [m.serialize() for m in matches],
         "ubos": ubos,

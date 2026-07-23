@@ -18,6 +18,7 @@ import { Audit } from "./pages/Audit";
 import { Assistant } from "./pages/Assistant";
 import { KycForm } from "./pages/KycForm";
 import { Chat } from "./pages/Chat";
+import { Profile } from "./pages/Profile";
 import { VerifyEmail } from "./pages/VerifyEmail";
 import { ResetPassword } from "./pages/ResetPassword";
 
@@ -43,6 +44,7 @@ export const router = createBrowserRouter(
       <Route path="/cases/:id" element={<CaseDetail />} />
       <Route path="/administration" element={<Administration />} />
       <Route path="/management" element={<Management />} />
+      <Route path="/profile" element={<Profile />} />
     </Route>
   ),
   // Login sits outside the Layout (no navbar). The future flag opts in to

@@ -123,6 +123,8 @@ class ChatMessage(db.Model):
             "sender_id": self.sender_id,
             "sender_name": (self.sender.full_name or self.sender.email)
                            if self.sender else "System",
+            "sender_avatar": (_sign_media(self.sender.avatar_url)
+                              if self.sender and self.sender.avatar_url else None),
             "from_staff": staff_author,
             "organization_name": org.name if org is not None else None,
             "kind": self.kind,

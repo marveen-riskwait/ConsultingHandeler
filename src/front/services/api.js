@@ -96,6 +96,22 @@ export const api = {
   mfaEnrollSession: () => request("/auth/mfa/enroll", { method: "POST" }),
   mfaConfirmSession: (code) => request("/auth/mfa/confirm", { method: "POST", body: { code } }),
   mfaDisable: () => request("/auth/mfa", { method: "DELETE" }),
+  updateProfile: (fields) => request("/profile", { method: "PATCH", body: fields }),
+  changePassword: (current_password, new_password) =>
+    request("/profile/password", { method: "POST", body: { current_password, new_password } }),
+  removeAvatar: () => request("/profile/avatar", { method: "DELETE" }),
+  uploadAvatar: async (file) => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${BASE}/api/profile/avatar`, {
+      method: "POST", credentials: "include",
+      headers: (() => { const c = readCookie("csrf_access_token"); return c ? { "X-CSRF-TOKEN": c } : {}; })(),
+      body: form,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || `Upload failed (${res.status})`);
+    return data;
+  },
 
   // customers
   customers: (archived) => request(`/customers${archived ? "?archived=1" : ""}`),

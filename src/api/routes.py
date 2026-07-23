@@ -414,6 +414,62 @@ def auth_mfa_confirm():
     return jsonify({"enabled": True, "backup_codes": backup}), 200
 
 
+@api.route("/profile", methods=["PATCH"])
+@login_required
+def update_profile(user):
+    """Edit one's own identity fields (not email, role or org — those are
+    administered, not self-served)."""
+    body = request.get_json(silent=True) or {}
+    for field in ("full_name", "job_title", "phone", "timezone"):
+        if field in body:
+            setattr(user, field, (body.get(field) or "").strip()[:120] or None)
+    audit.record("PROFILE_UPDATED", "user", user.id, actor=user, commit=True)
+    return jsonify({"user": user.serialize()}), 200
+
+
+@api.route("/profile/avatar", methods=["POST"])
+@login_required
+def upload_avatar(user):
+    """Set a profile photo. Stored like documents (signed URLs); only images."""
+    from api.integrations import media
+    upload = request.files.get("file")
+    if upload is None or not upload.filename:
+        raise APIException("An image file is required", status_code=400)
+    if not (upload.mimetype or "").startswith("image/"):
+        raise APIException("The profile photo must be an image.", status_code=400)
+    stored = media.store(upload)
+    user.avatar_url = stored["url"]
+    audit.record("AVATAR_UPDATED", "user", user.id, actor=user, commit=True)
+    return jsonify({"user": user.serialize()}), 200
+
+
+@api.route("/profile/avatar", methods=["DELETE"])
+@login_required
+def remove_avatar(user):
+    user.avatar_url = None
+    db.session.commit()
+    return jsonify({"user": user.serialize()}), 200
+
+
+@api.route("/profile/password", methods=["POST"])
+@login_required
+def change_password(user):
+    """Change one's own password — requires the current one, then applies the
+    policy. Revokes the current token so other sessions must re-authenticate."""
+    from api.security import password_problem
+    body = request.get_json(silent=True) or {}
+    current = body.get("current_password") or ""
+    new_pw = body.get("new_password") or ""
+    if not verify_password(user, current):
+        raise APIException("Your current password is incorrect.", status_code=400)
+    problem = password_problem(new_pw)
+    if problem:
+        raise APIException(problem, status_code=400)
+    user.password = hash_password(new_pw)
+    audit.record("PASSWORD_CHANGED", "user", user.id, actor=user, commit=True)
+    return jsonify({"ok": True}), 200
+
+
 @api.route("/auth/refresh", methods=["POST"])
 def refresh():
     """Mint a fresh 30-minute access cookie from the refresh cookie. This is

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Outlet, useNavigate, useLocation } from "react-router-dom";
+import { Outlet, useNavigate, useLocation, Link } from "react-router-dom";
 import ScrollToTop from "../components/ScrollToTop";
 import { Sidebar } from "../components/Sidebar";
 import { Login } from "./Login";
@@ -77,10 +77,14 @@ export const Layout = () => {
         <Sidebar />
         <div className="co-main">
           <header className="co-topbar">
-            <div className="co-user">
-              <span className="co-avatar">{initials}</span>
+            <Link to="/profile" className="co-user" title="Your profile"
+              style={{ textDecoration: "none", color: "inherit" }}>
+              {store.user?.avatar_url
+                ? <img src={store.user.avatar_url} alt="" className="pf-avatar"
+                    style={{ width: 34, height: 34 }} />
+                : <span className="co-avatar">{initials}</span>}
               <span className="co-user-name">{store.user?.full_name}</span>
-            </div>
+            </Link>
             <button className="btn btn-sm btn-outline-secondary" onClick={logout}>
               <i className="fa-solid fa-right-from-bracket" /> Logout
             </button>

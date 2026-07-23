@@ -37,6 +37,9 @@ const Bubble = ({ m, mine, onPreview, asOrganization }) => {
   return (
     <div className={`ch-msg ${mine ? "mine" : ""}`}>
       <div className="ch-bubble">
+        {!mine && m.sender_avatar && !asOrganization && (
+          <img src={m.sender_avatar} alt="" className="pf-avatar ch-avatar" />
+        )}
         {!mine && (
           <div className="ch-sender">
             {/* A client is answered by the organization, never by a named

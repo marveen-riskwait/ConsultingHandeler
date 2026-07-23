@@ -34,6 +34,13 @@ class Organization(db.Model):
         return {"id": self.id, "name": self.name}
 
 
+def _sign_avatar(url):
+    if not url:
+        return url
+    from api.integrations import media
+    return media.sign_url(url)
+
+
 class User(db.Model):
     __tablename__ = "user"
 
@@ -57,6 +64,13 @@ class User(db.Model):
     mfa_method: Mapped[str] = mapped_column(String(12), nullable=True)  # TOTP / EMAIL_OTP
     mfa_secret: Mapped[str] = mapped_column(String(64), nullable=True)  # TOTP shared secret
     mfa_backup_codes: Mapped[list] = mapped_column(JSON, default=list)  # hashed one-time codes
+
+    # Profile: identity a colleague sees, plus the photo that makes people
+    # recognisable in chat before they read the name.
+    avatar_url: Mapped[str] = mapped_column(String(500), nullable=True)
+    job_title: Mapped[str] = mapped_column(String(120), nullable=True)
+    phone: Mapped[str] = mapped_column(String(40), nullable=True)
+    timezone: Mapped[str] = mapped_column(String(60), nullable=True)
     # Brute-force defence: consecutive failed logins, and a lock that lifts
     # itself after a cooldown so a locked-out real user is not stranded.
     failed_logins: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
@@ -123,6 +137,11 @@ class User(db.Model):
             "id": self.id,
             "email": self.email,
             "full_name": self.full_name,
+            "avatar_url": _sign_avatar(self.avatar_url),
+            "job_title": self.job_title,
+            "phone": self.phone,
+            "timezone": self.timezone,
+            "last_login_at": self.last_login_at.isoformat() if self.last_login_at else None,
             "role": self.role,
             "roles": self.role_names(),
             "organization_id": self.organization_id,

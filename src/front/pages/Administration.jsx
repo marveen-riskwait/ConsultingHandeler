@@ -415,6 +415,7 @@ const IntegrationsTab = ({ me }) => {
   const [providers, setProviders] = useState([]);
   const [events, setEvents] = useState([]);
   const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
   const [credForm, setCredForm] = useState({});
 
   const load = useCallback(() => {
@@ -435,9 +436,19 @@ const IntegrationsTab = ({ me }) => {
   };
   const saveCred = async (p) => {
     const f = credForm[p.id] || {};
-    if (!f.key_name || !f.secret_value) return;
+    setNotice(null);
+    // A silent return here once cost a real user their API key setup: they
+    // filled one field, clicked, and nothing happened. Say what's missing.
+    if (!f.key_name || !f.secret_value) {
+      setError(`Nothing saved — both fields are required: the key name `
+               + `(e.g. "api_key") and the secret value.`);
+      return;
+    }
+    setError(null);
     try {
       await api.setProviderCredential(p.id, f);
+      setNotice(`Saved "${f.key_name.trim()}" for ${p.name}. The value is kept `
+                + `server-side and never displayed again.`);
       setCredForm({ ...credForm, [p.id]: {} });
       load();
     } catch (e) { setError(e.message); }
@@ -446,6 +457,7 @@ const IntegrationsTab = ({ me }) => {
   return (
     <>
       {error && <div className="alert alert-danger py-2">{error}</div>}
+      {notice && <div className="alert alert-success py-2">{notice}</div>}
       <div className="co-card" style={{ marginBottom: "1rem" }}>
         <div className="section-title">Providers</div>
         {providers.map((p) => (
@@ -456,9 +468,11 @@ const IntegrationsTab = ({ me }) => {
                 <b>{p.name}</b> <span className="muted" style={{ fontSize: ".82rem" }}>· {p.provider_type} · adapter: {p.adapter}</span>
                 {p.health && <span className={`chip ${HEALTH_SEV[p.health.status] || "INFO"}`} style={{ marginLeft: ".4rem" }}>{p.health.status}</span>}
               </div>
-              <span className="muted" style={{ fontSize: ".78rem" }}>
-                creds: {p.credential_keys.length ? p.credential_keys.join(", ") : "none"}
-              </span>
+              {p.credential_keys.length
+                ? <span className="chip LOW" title="Stored credential key names — values are never shown">
+                    <i className="fa-solid fa-key" /> {p.credential_keys.join(", ")}
+                  </span>
+                : <span className="chip MEDIUM">no credentials</span>}
               {canManage && <button className="btn btn-sm btn-outline-secondary" onClick={() => checkHealth(p)}>Health</button>}
               {canManage && (
                 <button className={`btn btn-sm ${p.enabled ? "btn-outline-danger" : "btn-outline-success"}`} onClick={() => toggle(p)}>

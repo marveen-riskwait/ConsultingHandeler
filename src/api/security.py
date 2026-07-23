@@ -127,3 +127,55 @@ def apply_jwt_cookie_config(app):
     # The refresh cookie is only ever sent to the refresh endpoint.
     app.config["JWT_REFRESH_COOKIE_PATH"] = "/api/auth/refresh"
     app.config["JWT_ACCESS_COOKIE_PATH"] = "/"
+
+
+# --- HTTP security headers ---------------------------------------------------
+def apply_security_headers(app):
+    """Content-Security-Policy, HSTS, clickjacking and sniffing protection via
+    Talisman. The CSP names exactly the CDNs the front loads (Bootstrap, Font
+    Awesome, Google Fonts) and allows same-origin scripts, styles, media and
+    the Socket.IO connection. HTTPS is forced only in production so local dev
+    over http still works.
+
+    style-src keeps 'unsafe-inline': the UI uses React inline style props and
+    Bootstrap, and inline *styles* are a negligible XSS vector next to scripts,
+    which are locked to 'self' and the one CDN. That is where the real
+    protection is.
+    """
+    try:
+        from flask_talisman import Talisman
+    except Exception:
+        return None
+
+    csp = {
+        "default-src": "'self'",
+        "script-src": ["'self'", "https://cdn.jsdelivr.net"],
+        "style-src": ["'self'", "'unsafe-inline'",
+                      "https://cdn.jsdelivr.net",
+                      "https://cdnjs.cloudflare.com",
+                      "https://use.fontawesome.com",
+                      "https://fonts.googleapis.com"],
+        "font-src": ["'self'", "data:",
+                     "https://fonts.gstatic.com",
+                     "https://cdnjs.cloudflare.com",
+                     "https://use.fontawesome.com"],
+        "img-src": ["'self'", "data:", "blob:"],
+        "media-src": ["'self'", "blob:"],
+        # Same-origin API + the Socket.IO websocket.
+        "connect-src": ["'self'", "ws:", "wss:"],
+        "frame-src": ["'self'", "blob:"],        # in-app PDF preview iframe
+        "frame-ancestors": "'none'",             # nobody may frame us
+        "object-src": "'none'",
+        "base-uri": "'self'",
+    }
+    return Talisman(
+        app,
+        content_security_policy=csp,
+        force_https=is_production(),
+        strict_transport_security=is_production(),
+        strict_transport_security_max_age=31536000,
+        session_cookie_secure=is_production(),
+        # We set our own CSRF (flask-jwt-extended); Talisman's is redundant.
+        frame_options="DENY",
+        referrer_policy="strict-origin-when-cross-origin",
+    )

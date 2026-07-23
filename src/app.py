@@ -79,6 +79,10 @@ app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=30)
 apply_jwt_cookie_config(app)
 jwt = JWTManager(app)
 
+# HTTP security headers (CSP, HSTS, clickjacking, sniffing).
+from api.security import apply_security_headers
+apply_security_headers(app)
+
 
 @jwt.token_in_blocklist_loader
 def _token_revoked(jwt_header, jwt_payload):

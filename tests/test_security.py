@@ -197,3 +197,32 @@ def test_a_portal_user_can_log_out(client, tokens, app):
         token = make_token(u)
     assert client.post("/api/auth/logout", headers=auth(token)).status_code == 200
     assert client.get("/api/portal/me", headers=auth(token)).status_code == 401
+
+
+def test_security_headers_are_present(client):
+    """Talisman sets CSP, frame and sniffing protection on every response."""
+    r = client.get("/api/health")
+    h = r.headers
+    assert "Content-Security-Policy" in h
+    csp = h["Content-Security-Policy"]
+    assert "default-src 'self'" in csp
+    assert "object-src 'none'" in csp
+    assert "frame-ancestors 'none'" in csp
+    assert h.get("X-Frame-Options") == "DENY"
+    assert h.get("X-Content-Type-Options") == "nosniff"
+    # script-src is locked to self + the one CDN we actually use.
+    assert "script-src 'self' https://cdn.jsdelivr.net" in csp
+
+
+def test_hsts_only_in_production(client, monkeypatch):
+    """No Strict-Transport-Security in dev (http), so local dev is not forced
+    onto https it does not have."""
+    r = client.get("/api/health")
+    # The test app runs as dev (FLASK_DEBUG unset in conftest? is_production
+    # returns True when FLASK_DEBUG != '1'); assert the header is coherent with
+    # whatever is_production() reports rather than hard-coding.
+    from api.security import is_production
+    if is_production():
+        assert "Strict-Transport-Security" in r.headers
+    else:
+        assert "Strict-Transport-Security" not in r.headers

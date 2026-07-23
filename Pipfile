@@ -25,6 +25,7 @@ flask-socketio = "*"
 simple-websocket = "*"
 segno = "*"
 flask-limiter = "*"
+flask-talisman = "*"
 
 [dev-packages]
 pytest = "*"

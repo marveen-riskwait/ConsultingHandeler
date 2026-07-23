@@ -73,13 +73,19 @@ def is_complex(customer):
 
 
 def directors_of(customer):
-    """Parties holding a DIRECTOR relationship to the customer's root party."""
+    """Parties holding a DIRECTOR relationship to the customer's root party.
+    Each carries its edge_id so the UI can remove an erroneous one."""
     if not customer.root_party_id:
         return []
     edges = (OwnershipRelationship.query
              .filter_by(owned_party_id=customer.root_party_id,
                         relationship_type="DIRECTOR", active=True).all())
-    return [Party.query.get(e.owner_party_id).serialize() for e in edges]
+    out = []
+    for e in edges:
+        d = Party.query.get(e.owner_party_id).serialize()
+        d["edge_id"] = e.id
+        out.append(d)
+    return out
 
 
 def build_graph(customer):

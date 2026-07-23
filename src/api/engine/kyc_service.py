@@ -65,31 +65,17 @@ _ADDRESS_FORM_KEYS = ("residential_street_number", "residential_street_name",
                       "residential_country")
 
 
-def sync_address_from_form(customer, actor=None):
-    """Mirror the form's structured address into the Address history.
-
-    No-op until a street name exists; identical values never create a new
-    row (add_address supersedes, and churning history on every form save
-    would bury the real changes the history exists to show)."""
+def _mirror_address(customer, *, line1, city=None, postal=None, country=None,
+                    address_type="RESIDENTIAL", actor=None):
+    """Add as the current address of that type unless identical — churning
+    history on every save would bury the real changes it exists to show."""
     from api.engine import party_service
     from api.models import Address
-
-    vals = {f.field_key: (f.value or "").strip()
-            for f in ProfileField.query
-                .filter(ProfileField.customer_id == customer.id,
-                        ProfileField.field_key.in_(_ADDRESS_FORM_KEYS)).all()}
-    street = vals.get("residential_street_name", "")
-    if not street:
-        return None
-    line1 = f"{vals.get('residential_street_number', '')} {street}".strip()
-    city = vals.get("residential_city") or None
-    postal = vals.get("residential_postal_code") or None
-    country = vals.get("residential_country") or None
 
     if customer.root_party_id:
         current = (Address.query
                    .filter_by(party_id=customer.root_party_id,
-                              address_type="RESIDENTIAL", is_current=True)
+                              address_type=address_type, is_current=True)
                    .first())
         if current and (current.line1 or "") == line1 \
                 and (current.city or "") == (city or "") \
@@ -98,4 +84,36 @@ def sync_address_from_form(customer, actor=None):
             return current
     return party_service.add_address(customer, line1=line1, city=city,
                                      postal_code=postal, country=country,
-                                     address_type="RESIDENTIAL", actor=actor)
+                                     address_type=address_type, actor=actor)
+
+
+def sync_address_from_form(customer, actor=None):
+    """Mirror address-shaped ProfileFields into the Address history, so the
+    same information never has to be typed twice.
+
+    INDIVIDUAL: the form's structured residential block -> RESIDENTIAL.
+    COMPANY: registered_office (declared on the form OR written by a registry
+    enrichment) -> REGISTERED, as a single line. No-op while empty."""
+    keys = _ADDRESS_FORM_KEYS + ("registered_office",)
+    vals = {f.field_key: (f.value or "").strip()
+            for f in ProfileField.query
+                .filter(ProfileField.customer_id == customer.id,
+                        ProfileField.field_key.in_(keys)).all()}
+
+    if customer.customer_type == "COMPANY":
+        office = vals.get("registered_office", "")
+        if not office:
+            return None
+        return _mirror_address(customer, line1=office,
+                               address_type="REGISTERED", actor=actor)
+
+    street = vals.get("residential_street_name", "")
+    if not street:
+        return None
+    line1 = f"{vals.get('residential_street_number', '')} {street}".strip()
+    return _mirror_address(
+        customer, line1=line1,
+        city=vals.get("residential_city") or None,
+        postal=vals.get("residential_postal_code") or None,
+        country=vals.get("residential_country") or None,
+        address_type="RESIDENTIAL", actor=actor)

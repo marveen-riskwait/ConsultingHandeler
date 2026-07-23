@@ -104,6 +104,58 @@ def add_related_party(customer, *, owner_name, owner_kind="PERSON",
     return owner, edge, emitted
 
 
+def remove_related_party(customer, edge_id, actor=None, reason=None):
+    """Deactivate an ownership/director edge (history kept, never deleted) and
+    emit the same change events as an addition — removing a bogus owner IS an
+    ownership change the monitoring chain must see.
+
+    Returns (edge, emitted_event_types)."""
+    edge = OwnershipRelationship.query.get(edge_id)
+    if (edge is None or not edge.active
+            or edge.organization_id != customer.organization_id):
+        return None, []
+    # The edge must belong to THIS customer's graph, not merely the same org.
+    graph_nodes = {n["id"] for n in ownership.build_graph(customer)["nodes"]}
+    if edge.owned_party_id not in graph_nodes:
+        return None, []
+
+    ubos_before = _ubo_snapshot(customer)
+    owner = Party.query.get(edge.owner_party_id)
+    owner_name = owner.name if owner else f"party {edge.owner_party_id}"
+
+    edge.active = False
+    audit.record("OWNERSHIP_REMOVED", "customer", customer.id, actor=actor,
+                 old_value=f"{owner_name} ({edge.relationship_type} "
+                           f"{edge.percentage}%)",
+                 reason=reason or "KYB correction")
+    customer.complex_ownership = ownership.is_complex(customer)
+    db.session.commit()
+
+    emitted = []
+    if edge.relationship_type == "DIRECTOR":
+        emit_event("DIRECTOR_CHANGED", customer_id=customer.id, severity="MEDIUM",
+                   source="kyb", actor=actor,
+                   payload={"director": owner_name, "removed": True})
+        emitted.append("DIRECTOR_CHANGED")
+    else:
+        emit_event("OWNERSHIP_CHANGED", customer_id=customer.id, severity="MEDIUM",
+                   source="kyb", actor=actor,
+                   payload={"owner": owner_name, "removed": True,
+                            "relationship_type": edge.relationship_type,
+                            "percentage": edge.percentage})
+        emitted.append("OWNERSHIP_CHANGED")
+
+    ubos_after = _ubo_snapshot(customer)
+    if ubos_after != ubos_before:
+        emit_event("UBO_CHANGED", customer_id=customer.id, severity="HIGH",
+                   source="kyb", actor=actor,
+                   payload={"added": sorted(ubos_after - ubos_before),
+                            "removed": sorted(ubos_before - ubos_after)})
+        emitted.append("UBO_CHANGED")
+
+    return edge, emitted
+
+
 def add_address(customer, *, line1, line2=None, city=None, postal_code=None,
                 country=None, address_type="RESIDENTIAL", actor=None):
     """Add an address; a replacement of a current address of the same type

@@ -30,6 +30,23 @@ def _adapter_for(customer):
     return CompaniesHouseKYBProvider()
 
 
+_UK_NAMES = ("united kingdom", "uk", "gb", "great britain", "england",
+             "scotland", "wales", "northern ireland")
+
+
+def _anchored(customer, reg_field):
+    """A UK-register import must be anchored: either someone OTHER than this
+    source recorded a registration number (the bundle was fetched by it), or
+    the customer is a UK company. A bare name match is NOT enough — it once
+    imported the director of a dissolved UK homonym into a Luxembourg
+    insurer's UBOs. A number this source wrote itself is no anchor: that
+    would let the homonym vouch for the homonym."""
+    if reg_field is not None and (reg_field.value or "").strip() \
+            and (reg_field.source or "") != "registry:companies_house":
+        return True
+    return (customer.country or "").strip().lower() in _UK_NAMES
+
+
 class CompaniesHouseSource(EnrichmentSource):
     name = "companies_house"
 
@@ -46,11 +63,27 @@ class CompaniesHouseSource(EnrichmentSource):
         reg = (ProfileField.query
                .filter_by(customer_id=customer.id, field_key="registration_number")
                .first())
-        bundle = adapter.company_bundle(name=customer.name,
-                                       number=reg.value if reg else None)
+        anchored = _anchored(customer, reg)
+        # A self-written number must not even drive the query — the homonym
+        # would keep fetching itself by its own id.
+        number = reg.value if (reg and anchored) else None
+        bundle = adapter.company_bundle(name=customer.name, number=number)
         if bundle is None:
             return result(self.name, ok=False,
                           detail="Company not found in the UK register.")
+
+        if not anchored:
+            # Report the finding, import nothing: name-only matches on
+            # non-UK customers are homonyms until a human anchors them.
+            profile = bundle["profile"]
+            return result(
+                self.name, ok=False,
+                detail=f"Name-only match in the UK register: "
+                       f"{profile.get('company_name')} "
+                       f"#{bundle['company_number']} "
+                       f"({profile.get('company_status')}). Not imported — "
+                       f"set registration_number if this really is the "
+                       f"same company.")
 
         profile = bundle["profile"]
         address = profile.get("registered_office_address") or {}

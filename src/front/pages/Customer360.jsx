@@ -19,7 +19,9 @@ const MATCH_SEV = {
 };
 
 // Render "who owns X" as a nested tree from the ownership edges.
-const OwnershipTree = ({ nodeId, nodes, edges, factor = 1, depth = 0 }) => {
+// onRemove (optional): deactivates an erroneous edge — a FALSE_POSITIVE case
+// decision never rewrites KYB data, this is how staff corrects the graph.
+const OwnershipTree = ({ nodeId, nodes, edges, factor = 1, depth = 0, onRemove }) => {
   const node = nodes.find((n) => n.id === nodeId);
   if (!node) return null;
   const owners = edges.filter((e) => e.owned_party_id === nodeId);
@@ -36,8 +38,13 @@ const OwnershipTree = ({ nodeId, nodes, edges, factor = 1, depth = 0 }) => {
         <div key={e.id}>
           <div style={{ marginLeft: 16, fontSize: ".82rem", color: "var(--co-muted)" }}>
             ▲ owns {e.percentage}% {e.relationship_type !== "SHAREHOLDER" ? `(${e.relationship_type})` : ""}
+            {onRemove && (
+              <button type="button" className="kf-doc-remove"
+                title="Remove this link (audited — the graph and UBOs recompute)"
+                onClick={() => onRemove(e)}>×</button>
+            )}
           </div>
-          <OwnershipTree nodeId={e.owner_party_id} nodes={nodes} edges={edges} depth={depth + 1} />
+          <OwnershipTree nodeId={e.owner_party_id} nodes={nodes} edges={edges} depth={depth + 1} onRemove={onRemove} />
         </div>
       ))}
     </div>
@@ -120,6 +127,10 @@ export const Customer360 = () => {
     try { await api.verifyField(id, fid); await load(); loadKyb(); }
     catch (err) { setError(err.message); }
   };
+  const removeField = async (fid) => {
+    try { await api.removeField(id, fid); await load(); loadKyb(); }
+    catch (err) { setError(err.message); }
+  };
 
   const requestInfo = async () => {
     setError(null);
@@ -142,6 +153,12 @@ export const Customer360 = () => {
       setCompleting(null); setReviewForm({ decision: "APPROVED", reason: "" });
       await load();
     } catch (err) { setError(err.message); }
+  };
+
+  const removeOwner = async (edge) => {
+    setError(null);
+    try { await api.removeOwnership(id, edge.id); await load(); loadKyb(); }
+    catch (err) { setError(err.message); }
   };
 
   const submitOwner = async (e) => {
@@ -600,7 +617,14 @@ export const Customer360 = () => {
                 <div className="muted" style={{ fontSize: ".78rem", marginBottom: ".2rem" }}>Directors</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: ".35rem" }}>
                   {graph.directors.map((d) => (
-                    <span key={d.id} className="chip INFO"><i className="fa-solid fa-user-tie" /> {d.name}</span>
+                    <span key={d.id} className="chip INFO">
+                      <i className="fa-solid fa-user-tie" /> {d.name}
+                      {can(store.user, "kyb.edit") && d.edge_id && (
+                        <button type="button" className="kf-doc-remove"
+                          title="Remove this director (audited)"
+                          onClick={() => removeOwner({ id: d.edge_id })}>×</button>
+                      )}
+                    </span>
                   ))}
                 </div>
               </div>
@@ -608,7 +632,8 @@ export const Customer360 = () => {
             {graph && graph.graph && graph.graph.root_id && (
               <div style={{ fontSize: ".9rem", marginTop: ".4rem" }}>
                 <div className="muted" style={{ fontSize: ".78rem", marginBottom: ".2rem" }}>Structure</div>
-                <OwnershipTree nodeId={graph.graph.root_id} nodes={graph.graph.nodes} edges={graph.graph.edges} />
+                <OwnershipTree nodeId={graph.graph.root_id} nodes={graph.graph.nodes} edges={graph.graph.edges}
+                  onRemove={can(store.user, "kyb.edit") ? removeOwner : null} />
               </div>
             )}
             {can(store.user, "kyb.edit") && (
@@ -718,6 +743,11 @@ export const Customer360 = () => {
                   : can(store.user, "kyc.approve")
                     ? <button className="btn btn-sm btn-outline-success" onClick={() => verifyField(f.id)}>Verify</button>
                     : <span className="chip MEDIUM">unverified</span>}
+                {can(store.user, "kyc.edit") && (
+                  <button type="button" className="kf-doc-remove"
+                    title="Remove this field (audited — e.g. registry data imported for the wrong company)"
+                    onClick={() => removeField(f.id)}>×</button>
+                )}
               </div>
             ))}
             {can(store.user, "kyc.edit") && (

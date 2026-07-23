@@ -807,6 +807,21 @@ def add_ownership(user, cid):
                     "events": emitted}), 201
 
 
+@api.route("/customers/<int:cid>/ownership/<int:edge_id>", methods=["DELETE"])
+@permission_required("kyb.edit")
+def remove_ownership(user, cid, edge_id):
+    """Remove an erroneous owner/director (edge deactivated, history kept).
+    Deciding a case FALSE_POSITIVE never rewrites KYB data — this does."""
+    customer = _get_customer_for(user, cid)
+    edge, emitted = party_service.remove_related_party(customer, edge_id,
+                                                       actor=user)
+    if edge is None:
+        raise APIException("Ownership link not found for this customer",
+                           status_code=404)
+    return jsonify({"removed": True, "edge": edge.serialize(),
+                    "events": emitted}), 200
+
+
 @api.route("/customers/<int:cid>/addresses", methods=["GET"])
 @permission_required("customer.view")
 def list_addresses(user, cid):
@@ -881,6 +896,25 @@ def verify_field(user, cid, fid):
         raise APIException("Field not found", status_code=404)
     kyc_service.verify_field(field, user)
     return jsonify(field.serialize()), 200
+
+
+@api.route("/customers/<int:cid>/fields/<int:fid>", methods=["DELETE"])
+@permission_required("kyc.edit")
+def delete_field(user, cid, fid):
+    """Remove a wrong profile field (e.g. registry data imported for the
+    wrong company). The audit trail keeps what was removed and by whom."""
+    customer = _get_customer_for(user, cid)
+    field = ProfileField.query.get(fid)
+    if field is None or field.customer_id != cid:
+        raise APIException("Field not found", status_code=404)
+    audit.record("PROFILE_FIELD_REMOVED", "customer", cid, actor=user,
+                 old_value=f"{field.field_key}={field.value} "
+                           f"(src={field.source})")
+    db.session.delete(field)
+    db.session.commit()
+    requirement_engine.evaluate(customer)
+    db.session.commit()
+    return jsonify({"deleted": True}), 200
 
 
 @api.route("/customers/<int:cid>/requirements", methods=["GET"])

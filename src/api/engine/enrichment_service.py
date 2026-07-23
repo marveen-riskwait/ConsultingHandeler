@@ -113,6 +113,12 @@ def enrich(customer, actor=None):
                    severity="MEDIUM", source=f"enrichment:{d['source']}",
                    actor=actor, payload=d)
 
+    # Registry-written address fields mirror into the Address history the
+    # same way form answers do — auto-filled data must land everywhere the
+    # same information lives, not only in the profile fields.
+    if report["fields_filled"]:
+        kyc_service.sync_address_from_form(customer, actor=actor)
+
     # Requirements recompute so the completeness bar reflects the new data.
     summary = requirement_engine.summary(customer)
 

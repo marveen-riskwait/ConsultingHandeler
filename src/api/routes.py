@@ -1337,6 +1337,29 @@ def add_team_member(user, team_id):
     return jsonify(tm.serialize()), 201
 
 
+@api.route("/users/assignable", methods=["GET"])
+@permission_required("case.assign")
+def assignable_users(user):
+    """Who work can be handed to: your team-mates when you belong to one or
+    more teams, the whole active staff otherwise. Deliberately NOT gated by
+    user.view — assigning is an operational act, not user administration."""
+    team_ids = [tm.team_id for tm in
+                TeamMembership.query.filter_by(user_id=user.id).all()]
+    if team_ids:
+        member_ids = {tm.user_id for tm in TeamMembership.query
+                      .filter(TeamMembership.team_id.in_(team_ids)).all()}
+        candidates = User.query.filter(User.id.in_(member_ids)).all()
+    else:
+        candidates = User.query.filter_by(
+            organization_id=user.organization_id).all()
+    out = [{"id": u.id, "full_name": u.full_name, "email": u.email}
+           for u in candidates
+           if u.is_active and u.organization_id == user.organization_id
+           and not u.customer_id]           # never a portal account
+    out.sort(key=lambda x: (x["full_name"] or x["email"]).lower())
+    return jsonify(out), 200
+
+
 @api.route("/users", methods=["GET"])
 @permission_required("user.view")
 def list_users(user):

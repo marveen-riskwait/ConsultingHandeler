@@ -218,6 +218,7 @@ export const api = {
   providers: () => request("/providers"),
   createProvider: (payload) => request("/providers", { method: "POST", body: payload }),
   updateProvider: (id, payload) => request(`/providers/${id}`, { method: "PATCH", body: payload }),
+  assignableUsers: () => request("/users/assignable"),
   setProviderCredential: (id, payload) => request(`/providers/${id}/credentials`, { method: "POST", body: payload }),
   deleteProviderCredential: (id, keyName) => request(`/providers/${id}/credentials`, { method: "DELETE", body: { key_name: keyName } }),
   providerHealth: (id) => request(`/providers/${id}/health`, { method: "POST" }),

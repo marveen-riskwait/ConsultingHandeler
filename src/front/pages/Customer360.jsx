@@ -59,6 +59,9 @@ export const Customer360 = () => {
   const [kyb, setKyb] = useState(null);
   const [kybBusy, setKybBusy] = useState(false);
   const [openAlert, setOpenAlert] = useState(null);
+  const [openReview, setOpenReview] = useState(null);      // review whose details are unfolded
+  const [completing, setCompleting] = useState(null);      // review being completed
+  const [reviewForm, setReviewForm] = useState({ decision: "APPROVED", reason: "" });
   const [enriching, setEnriching] = useState(false);
   const [enrichNote, setEnrichNote] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -127,11 +130,15 @@ export const Customer360 = () => {
   const startReview = async (rid) => {
     try { await api.startReview(rid); await load(); } catch (err) { setError(err.message); }
   };
+  // Completing a review is a decision, not a click: an inline panel asks for
+  // approve/reject + a reason (same discipline as workflow step findings).
   const completeReview = async (rid) => {
-    const reason = window.prompt("Review decision reason (audited):");
-    if (!reason) return;
-    try { await api.completeReview(rid, { decision: "APPROVED", reason }); await load(); }
-    catch (err) { setError(err.message); }
+    try {
+      await api.completeReview(rid, {
+        decision: reviewForm.decision, reason: reviewForm.reason.trim() });
+      setCompleting(null); setReviewForm({ decision: "APPROVED", reason: "" });
+      await load();
+    } catch (err) { setError(err.message); }
   };
 
   const submitOwner = async (e) => {
@@ -362,18 +369,69 @@ export const Customer360 = () => {
             {reviews.length === 0 && <div className="muted" style={{ fontSize: ".88rem" }}>No reviews.</div>}
             <div className="co-rows">
             {reviews.map((r) => (
-              <div className="work-row" key={r.id}>
-                <span className={`dotsev ${REVIEW_SEV[r.status] || "INFO"}`} />
-                <div className="grow">
-                  <div className="title">{r.review_type.replace(/_/g, " ")}</div>
-                  <div className="meta">{r.trigger}{r.due_at ? ` · due ${new Date(r.due_at).toLocaleDateString()}` : ""}</div>
+              <div key={r.id} style={{ borderBottom: "1px solid var(--co-border)" }}>
+                <div className="work-row" style={{ borderBottom: "none" }}>
+                  <span className={`dotsev ${REVIEW_SEV[r.status] || "INFO"}`} />
+                  <div className="grow">
+                    <div className="title">{r.review_type.replace(/_/g, " ")}</div>
+                    <div className="meta">{r.trigger}{r.due_at ? ` · due ${new Date(r.due_at).toLocaleDateString()}` : ""}</div>
+                  </div>
+                  <span className={`chip ${REVIEW_SEV[r.status] || "INFO"}`}>{r.status}</span>
+                  <button className="btn btn-sm btn-outline-secondary"
+                    onClick={() => setOpenReview(openReview === r.id ? null : r.id)}>
+                    {openReview === r.id ? "Hide" : "Details"}
+                  </button>
+                  {can(store.user, "kyc.review") && r.status === "DUE" && (
+                    <button className="btn btn-sm btn-outline-secondary" onClick={() => startReview(r.id)}>Start</button>
+                  )}
+                  {can(store.user, "kyc.review") && r.status === "IN_PROGRESS" && (
+                    <button className="btn btn-sm btn-outline-success"
+                      onClick={() => { setCompleting(completing === r.id ? null : r.id);
+                                       setReviewForm({ decision: "APPROVED", reason: "" }); }}>
+                      Complete
+                    </button>
+                  )}
                 </div>
-                <span className={`chip ${REVIEW_SEV[r.status] || "INFO"}`}>{r.status}</span>
-                {can(store.user, "kyc.review") && r.status === "DUE" && (
-                  <button className="btn btn-sm btn-outline-secondary" onClick={() => startReview(r.id)}>Start</button>
+                {openReview === r.id && (
+                  <div className="md-panel" style={{ marginLeft: "1.4rem" }}>
+                    {[["Status", r.status],
+                      ["Trigger", r.trigger],
+                      ["Scheduled", r.scheduled_for && new Date(r.scheduled_for).toLocaleDateString()],
+                      ["Started", r.started_at && new Date(r.started_at).toLocaleString()],
+                      ["Completed", r.completed_at && new Date(r.completed_at).toLocaleString()],
+                      ["Decision", r.decision],
+                      ["Reason", r.decision_reason],
+                      ["Methodology", r.methodology_version && `v${r.methodology_version}`],
+                    ].map(([label, value]) => value ? (
+                      <div className="md-row" key={label}>
+                        <span className="md-label">{label}</span>
+                        <span className="md-value">{value}</span>
+                      </div>
+                    ) : null)}
+                  </div>
                 )}
-                {can(store.user, "kyc.review") && r.status === "IN_PROGRESS" && (
-                  <button className="btn btn-sm btn-outline-success" onClick={() => completeReview(r.id)}>Complete</button>
+                {completing === r.id && (
+                  <div className="wf-complete" style={{ marginLeft: "1.4rem", marginBottom: ".6rem" }}>
+                    <div className="meta" style={{ marginBottom: ".35rem" }}>
+                      The decision and its reason are recorded on the review (audited).
+                    </div>
+                    <select className="form-select form-select-sm" value={reviewForm.decision}
+                      onChange={(e) => setReviewForm({ ...reviewForm, decision: e.target.value })}>
+                      <option value="APPROVED">Approve — relationship continues</option>
+                      <option value="REJECTED">Reject — escalate / exit</option>
+                    </select>
+                    <input className="form-control form-control-sm" style={{ marginTop: ".4rem" }}
+                      placeholder="What did the review find? (min 5 chars)"
+                      value={reviewForm.reason}
+                      onChange={(e) => setReviewForm({ ...reviewForm, reason: e.target.value })} />
+                    <div className="d-flex gap-2" style={{ marginTop: ".5rem" }}>
+                      <button className="btn btn-sm btn-outline-secondary"
+                        onClick={() => setCompleting(null)}>Cancel</button>
+                      <button className="btn btn-sm btn-co"
+                        disabled={reviewForm.reason.trim().length < 5}
+                        onClick={() => completeReview(r.id)}>Record decision</button>
+                    </div>
+                  </div>
                 )}
               </div>
             ))}

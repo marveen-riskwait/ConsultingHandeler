@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Outlet, useNavigate, useLocation, Link } from "react-router-dom";
 import ScrollToTop from "../components/ScrollToTop";
 import { Sidebar } from "../components/Sidebar";
@@ -18,6 +18,21 @@ export const Layout = () => {
   const { store, dispatch } = useGlobalReducer();
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Navigation chrome: `collapsed` is the desktop icon-rail (persisted),
+  // `navOpen` is the mobile drawer (never persisted — a drawer left open
+  // across visits would cover the content people came back for).
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem("co-nav-collapsed") === "1");
+  const [navOpen, setNavOpen] = useState(false);
+  const toggleCollapsed = () => {
+    setCollapsed((c) => {
+      localStorage.setItem("co-nav-collapsed", c ? "0" : "1");
+      return !c;
+    });
+  };
+  // Navigating means the user picked a destination — the drawer's job is done.
+  useEffect(() => { setNavOpen(false); }, [location.pathname]);
 
   // Refresh the profile (roles/permissions) on load AND on every navigation,
   // so a permission granted by an admin mid-session shows up in the UI without
@@ -73,10 +88,16 @@ export const Layout = () => {
 
   return (
     <ScrollToTop>
-      <div className="co-app">
-        <Sidebar />
+      <div className={"co-app" + (collapsed ? " nav-collapsed" : "")
+                                + (navOpen ? " nav-open" : "")}>
+        <Sidebar collapsed={collapsed} onToggle={toggleCollapsed} />
+        <div className="co-backdrop" onClick={() => setNavOpen(false)} />
         <div className="co-main">
           <header className="co-topbar">
+            <button type="button" className="co-burger" title="Menu"
+              onClick={() => setNavOpen(true)}>
+              <i className="fa-solid fa-bars" />
+            </button>
             <Link to="/profile" className="co-user" title="Your profile"
               style={{ textDecoration: "none", color: "inherit" }}>
               {store.user?.avatar_url

@@ -18,7 +18,9 @@ const NAV_ITEMS = [
   { to: "/administration", icon: "fa-gear", label: "Admin", permission: "user.view" },
 ];
 
-export const Sidebar = () => {
+// collapsed/onToggle: desktop icon-rail mode, owned by Layout (persisted).
+// On mobile the same sidebar renders as a drawer; Layout controls open/close.
+export const Sidebar = ({ collapsed, onToggle }) => {
   const { store } = useGlobalReducer();
   const location = useLocation();
   const items = filterByPermission(NAV_ITEMS, store.user);
@@ -47,13 +49,17 @@ export const Sidebar = () => {
   return (
     <aside className="co-sidebar">
       <div className="co-sidebar-brand">
-        <span className="dot" /> Compliance OS
+        <span className="dot" /> <span className="co-brand-txt">Compliance OS</span>
+        <button type="button" className="co-nav-toggle" onClick={onToggle}
+          title={collapsed ? "Expand navigation" : "Collapse navigation"}>
+          <i className={`fa-solid fa-angles-${collapsed ? "right" : "left"}`} />
+        </button>
       </div>
 
       <div className="co-sidebar-group">Workspace</div>
       <nav className="co-sidebar-nav">
         {items.map((it) => (
-          <NavLink key={it.to} to={it.to} end={it.end}
+          <NavLink key={it.to} to={it.to} end={it.end} title={it.label}
             className={({ isActive }) => "co-sidebar-link" + (isActive ? " active" : "")}>
             <i className={`fa-solid ${it.icon}`} />
             <span>{it.label}</span>
@@ -62,7 +68,7 @@ export const Sidebar = () => {
       </nav>
 
       <div className="co-sidebar-foot">
-        <NavLink to="/chat"
+        <NavLink to="/chat" title="Team Chat"
           className={({ isActive }) => "co-sidebar-link" + (isActive ? " active" : "")}>
           <i className="fa-solid fa-comments" />
           <span>Team Chat</span>

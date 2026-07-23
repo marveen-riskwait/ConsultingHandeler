@@ -89,12 +89,12 @@ export const Alerts = () => {
             {expanded === a.id && <AlertDetails details={a.details} />}
             {resolving === a.id && (
               <div className="row g-1 align-items-end" style={{ marginTop: ".4rem", paddingLeft: "1.4rem" }}>
-                <div className="col-7">
+                <div className="col-12 col-md-7">
                   <input className="form-control form-control-sm" placeholder="Resolution note (audited)"
                     value={resolution} onChange={(e) => setResolution(e.target.value)} />
                 </div>
-                <div className="col-2"><button className="btn btn-sm btn-outline-success w-100" onClick={() => doResolve(a, false)}>Resolve</button></div>
-                <div className="col-2"><button className="btn btn-sm btn-outline-secondary w-100" onClick={() => doResolve(a, true)}>Dismiss</button></div>
+                <div className="col-6 col-md-2"><button className="btn btn-sm btn-outline-success w-100" onClick={() => doResolve(a, false)}>Resolve</button></div>
+                <div className="col-6 col-md-2"><button className="btn btn-sm btn-outline-secondary w-100" onClick={() => doResolve(a, true)}>Dismiss</button></div>
               </div>
             )}
             {a.resolution && <div className="muted" style={{ fontSize: ".82rem", paddingLeft: "1.4rem" }}>Resolution: {a.resolution}</div>}

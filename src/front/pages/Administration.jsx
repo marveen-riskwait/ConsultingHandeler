@@ -262,12 +262,12 @@ const TeamsTab = ({ me }) => {
         <div className="row g-3" style={{ marginBottom: "1rem" }}>
           <div className="col-md-7">
             <form className="co-card row g-2 align-items-end m-0" onSubmit={createTeam}>
-              <div className="col-6">
+              <div className="col-12 col-sm-6">
                 <label className="form-label">New team</label>
                 <input className="form-control" required value={teamForm.name}
                   onChange={(e) => setTeamForm({ ...teamForm, name: e.target.value })} />
               </div>
-              <div className="col-4">
+              <div className="col-8 col-sm-4">
                 <label className="form-label">Department</label>
                 <select className="form-select" value={teamForm.department_id}
                   onChange={(e) => setTeamForm({ ...teamForm, department_id: e.target.value })}>
@@ -275,7 +275,7 @@ const TeamsTab = ({ me }) => {
                   {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                 </select>
               </div>
-              <div className="col-2"><button className="btn btn-co w-100">Create</button></div>
+              <div className="col-4 col-sm-2"><button className="btn btn-co w-100">Create</button></div>
             </form>
           </div>
           <div className="col-md-5">
@@ -468,17 +468,17 @@ const IntegrationsTab = ({ me }) => {
             </div>
             {canManage && (
               <div className="row g-1 align-items-end" style={{ marginTop: ".4rem", paddingLeft: "1.4rem" }}>
-                <div className="col-3">
+                <div className="col-12 col-md-3">
                   <input className="form-control form-control-sm" placeholder="key (e.g. api_key)"
                     value={(credForm[p.id] || {}).key_name || ""}
                     onChange={(e) => setCredForm({ ...credForm, [p.id]: { ...(credForm[p.id] || {}), key_name: e.target.value } })} />
                 </div>
-                <div className="col-4">
+                <div className="col-8 col-md-4">
                   <input type="password" className="form-control form-control-sm" placeholder="secret (never displayed)"
                     value={(credForm[p.id] || {}).secret_value || ""}
                     onChange={(e) => setCredForm({ ...credForm, [p.id]: { ...(credForm[p.id] || {}), secret_value: e.target.value } })} />
                 </div>
-                <div className="col-2">
+                <div className="col-4 col-md-2">
                   <button className="btn btn-sm btn-co w-100" onClick={() => saveCred(p)}>Save credential</button>
                 </div>
               </div>
@@ -706,22 +706,24 @@ const WatchlistsTab = ({ me }) => {
             </button>
           )}
         </div>
-        <table className="table table-sm align-middle" style={{ marginTop: ".5rem" }}>
-          <thead><tr className="muted"><th>Source</th><th>Records</th><th>Last import</th><th>Mode</th><th>Status</th></tr></thead>
-          <tbody>
-            {stats.map((s) => (
-              <tr key={s.source}>
-                <td><b>{s.label}</b></td>
-                <td>{s.record_count}</td>
-                <td className="muted">{s.last_import ? new Date(s.last_import.started_at).toLocaleString() : "never"}</td>
-                <td>{s.last_import ? (s.last_import.live
-                  ? <span className="chip LOW">LIVE</span>
-                  : <span className="chip MEDIUM">SAMPLE</span>) : "—"}</td>
-                <td className="muted">{s.last_import?.detail || "Run an import to load this list."}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="co-table-wrap" style={{ marginTop: ".5rem" }}>
+          <table className="table table-sm align-middle">
+            <thead><tr className="muted"><th>Source</th><th>Records</th><th>Last import</th><th>Mode</th><th>Status</th></tr></thead>
+            <tbody>
+              {stats.map((s) => (
+                <tr key={s.source}>
+                  <td><b>{s.label}</b></td>
+                  <td>{s.record_count}</td>
+                  <td className="muted">{s.last_import ? new Date(s.last_import.started_at).toLocaleString() : "never"}</td>
+                  <td>{s.last_import ? (s.last_import.live
+                    ? <span className="chip LOW">LIVE</span>
+                    : <span className="chip MEDIUM">SAMPLE</span>) : "—"}</td>
+                  <td className="muted">{s.last_import?.detail || "Run an import to load this list."}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div className="co-card">

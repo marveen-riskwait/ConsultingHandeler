@@ -179,7 +179,8 @@ export const Customer360 = () => {
 
   return (
     <>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1rem" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start",
+                    flexWrap: "wrap", gap: ".6rem .9rem", marginBottom: "1rem" }}>
         <div>
           <div className="muted" style={{ fontSize: ".8rem" }}><Link to="/customers">← Customers</Link></div>
           <h3 style={{ margin: ".2rem 0" }}>{customer.name}</h3>
@@ -188,7 +189,7 @@ export const Customer360 = () => {
             {customer.business_activity ? ` · ${customer.business_activity}` : ""}
           </div>
         </div>
-        <div className="d-flex gap-2">
+        <div className="d-flex gap-2 flex-wrap">
           {can(store.user, "kyc.view") && (
             <Link to={`/customers/${id}/kyc-form`} className="btn btn-outline-secondary">
               <i className="fa-solid fa-clipboard-check" /> KYC form
@@ -539,11 +540,11 @@ export const Customer360 = () => {
             )}
             {can(store.user, "kyb.edit") && (
               <form onSubmit={submitOwner} className="row g-1 align-items-end" style={{ marginTop: ".75rem", borderTop: "1px solid var(--co-border)", paddingTop: ".6rem" }}>
-                <div className="col-3">
+                <div className="col-12 col-md-3">
                   <input className="form-control form-control-sm" placeholder="Name" required
                     value={ownerForm.owner_name} onChange={(e) => setOwnerForm({ ...ownerForm, owner_name: e.target.value })} />
                 </div>
-                <div className="col-3">
+                <div className="col-6 col-md-3">
                   <select className="form-select form-select-sm" value={ownerForm.relationship_type}
                     onChange={(e) => setOwnerForm({ ...ownerForm, relationship_type: e.target.value })}>
                     <option value="SHAREHOLDER">Shareholder</option>
@@ -552,18 +553,18 @@ export const Customer360 = () => {
                     <option value="CONTROL">Control</option>
                   </select>
                 </div>
-                <div className="col-2">
+                <div className="col-6 col-md-2">
                   <select className="form-select form-select-sm" value={ownerForm.owner_kind}
                     onChange={(e) => setOwnerForm({ ...ownerForm, owner_kind: e.target.value })}>
                     <option value="PERSON">Person</option>
                     <option value="ORGANIZATION">Company</option>
                   </select>
                 </div>
-                <div className="col-2">
+                <div className="col-6 col-md-2">
                   <input className="form-control form-control-sm" placeholder="%" type="number" min="0" max="100"
                     value={ownerForm.percentage} onChange={(e) => setOwnerForm({ ...ownerForm, percentage: e.target.value })} />
                 </div>
-                <div className="col-2">
+                <div className="col-6 col-md-2">
                   <button className="btn btn-sm btn-co w-100">Add</button>
                 </div>
               </form>
@@ -594,19 +595,19 @@ export const Customer360 = () => {
             ))}
             {can(store.user, "kyc.edit") && (
               <form onSubmit={submitAddress} className="row g-1 align-items-end" style={{ marginTop: ".6rem", borderTop: "1px solid var(--co-border)", paddingTop: ".6rem" }}>
-                <div className="col-5">
+                <div className="col-12 col-md-5">
                   <input className="form-control form-control-sm" placeholder="Street" required
                     value={addrForm.line1} onChange={(e) => setAddrForm({ ...addrForm, line1: e.target.value })} />
                 </div>
-                <div className="col-3">
+                <div className="col-5 col-md-3">
                   <input className="form-control form-control-sm" placeholder="City"
                     value={addrForm.city} onChange={(e) => setAddrForm({ ...addrForm, city: e.target.value })} />
                 </div>
-                <div className="col-2">
+                <div className="col-4 col-md-2">
                   <input className="form-control form-control-sm" placeholder="Country"
                     value={addrForm.country} onChange={(e) => setAddrForm({ ...addrForm, country: e.target.value })} />
                 </div>
-                <div className="col-2">
+                <div className="col-3 col-md-2">
                   <button className="btn btn-sm btn-co w-100">Add</button>
                 </div>
               </form>
@@ -638,19 +639,19 @@ export const Customer360 = () => {
             ))}
             {can(store.user, "kyc.edit") && (
               <form onSubmit={submitField} className="row g-1 align-items-end" style={{ marginTop: ".6rem", borderTop: "1px solid var(--co-border)", paddingTop: ".6rem" }}>
-                <div className="col-4">
+                <div className="col-6 col-md-4">
                   <input className="form-control form-control-sm" placeholder="field_key" required
                     value={fieldForm.field_key} onChange={(e) => setFieldForm({ ...fieldForm, field_key: e.target.value })} />
                 </div>
-                <div className="col-4">
+                <div className="col-6 col-md-4">
                   <input className="form-control form-control-sm" placeholder="value"
                     value={fieldForm.value} onChange={(e) => setFieldForm({ ...fieldForm, value: e.target.value })} />
                 </div>
-                <div className="col-2">
+                <div className="col-6 col-md-2">
                   <input className="form-control form-control-sm" placeholder="source"
                     value={fieldForm.source} onChange={(e) => setFieldForm({ ...fieldForm, source: e.target.value })} />
                 </div>
-                <div className="col-2">
+                <div className="col-6 col-md-2">
                   <button className="btn btn-sm btn-co w-100">Set</button>
                 </div>
               </form>

@@ -38,9 +38,60 @@ export const Alerts = () => {
   const canAssign = can(me, "case.assign");
   const canResolve = can(me, "case.update");
 
+  // A plain render function, NOT a nested component: a component type defined
+  // inside render would remount on every keystroke and the resolution input
+  // would lose focus after each character.
+  const renderRow = (a) => (
+    <div key={a.id} style={{ borderBottom: "1px solid var(--co-border)", padding: ".7rem 0" }}>
+      <div className="work-row" style={{ borderBottom: "none", padding: 0 }}>
+        <span className={`dotsev ${a.severity}`} />
+        <div className="grow">
+          <div className="title">
+            {a.title}
+            {a.customer_id && <Link to={`/customers/${a.customer_id}`} style={{ fontWeight: 400 }}> · {a.customer_name}</Link>}
+          </div>
+          <div className="meta">
+            {a.source} · {fmt(a.created_at)}
+            {a.assigned_to_name ? <> · <b>{a.assigned_to_name}</b></> : ""}
+          </div>
+        </div>
+        <span className={`chip ${a.severity}`}>{a.severity}</span>
+        <span className={`chip ${a.status === "RESOLVED" ? "LOW" : a.status === "DISMISSED" ? "INFO" : "MEDIUM"}`}>{a.status}</span>
+        <button className="btn btn-sm btn-outline-secondary"
+          onClick={() => setExpanded(expanded === a.id ? null : a.id)}>
+          {expanded === a.id ? "Hide" : "Details"}
+        </button>
+        {!["RESOLVED", "DISMISSED"].includes(a.status) && canAssign && !a.assigned_to && (
+          <button className="btn btn-sm btn-outline-secondary" onClick={() => assignToMe(a)}>Assign to me</button>
+        )}
+        {!["RESOLVED", "DISMISSED"].includes(a.status) && canResolve && (
+          <button className="btn btn-sm btn-outline-success" onClick={() => { setResolving(resolving === a.id ? null : a.id); setResolution(""); }}>Resolve</button>
+        )}
+      </div>
+      {expanded === a.id && <AlertDetails details={a.details} />}
+      {resolving === a.id && (
+        <div className="row g-1 align-items-end" style={{ marginTop: ".4rem", paddingLeft: "1.4rem" }}>
+          <div className="col-12 col-md-7">
+            <input className="form-control form-control-sm" placeholder="Resolution note (audited)"
+              value={resolution} autoFocus onChange={(e) => setResolution(e.target.value)} />
+          </div>
+          <div className="col-6 col-md-2"><button className="btn btn-sm btn-outline-success w-100" onClick={() => doResolve(a, false)}>Resolve</button></div>
+          <div className="col-6 col-md-2"><button className="btn btn-sm btn-outline-secondary w-100" onClick={() => doResolve(a, true)}>Dismiss</button></div>
+        </div>
+      )}
+      {a.resolution && <div className="muted" style={{ fontSize: ".82rem", paddingLeft: "1.4rem" }}>Resolution: {a.resolution}</div>}
+    </div>
+  );
+
+  // Two piles for active work: what still needs an owner, then what is being
+  // handled (and by whom). History views keep a single flat list.
+  const history = ["RESOLVED", "DISMISSED"].includes(filter);
+  const unassigned = alerts.filter((a) => !a.assigned_to);
+  const assigned = alerts.filter((a) => a.assigned_to);
+
   return (
     <>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: ".6rem", marginBottom: "1rem" }}>
         <h3 style={{ margin: 0 }}>Alert Center</h3>
         <select className="form-select" style={{ width: 200 }} value={filter} onChange={(e) => setFilter(e.target.value)}>
           <option value="OPEN_ALL">Open (all active)</option>
@@ -60,47 +111,31 @@ export const Alerts = () => {
         <div className="co-counter tasks"><div className="n">{alerts.length}</div><div className="l">Total shown</div></div>
       </div>
 
-      <div className="co-card">
-        {alerts.length === 0 && <div className="empty">No alerts. 🎉</div>}
-        {alerts.map((a) => (
-          <div key={a.id} style={{ borderBottom: "1px solid var(--co-border)", padding: ".7rem 0" }}>
-            <div className="work-row" style={{ borderBottom: "none", padding: 0 }}>
-              <span className={`dotsev ${a.severity}`} />
-              <div className="grow">
-                <div className="title">
-                  {a.title}
-                  {a.customer_id && <Link to={`/customers/${a.customer_id}`} style={{ fontWeight: 400 }}> · {a.customer_name}</Link>}
-                </div>
-                <div className="meta">{a.source} · {fmt(a.created_at)}{a.assigned_to ? " · assigned" : ""}</div>
-              </div>
-              <span className={`chip ${a.severity}`}>{a.severity}</span>
-              <span className={`chip ${a.status === "RESOLVED" ? "LOW" : a.status === "DISMISSED" ? "INFO" : "MEDIUM"}`}>{a.status}</span>
-              <button className="btn btn-sm btn-outline-secondary"
-                onClick={() => setExpanded(expanded === a.id ? null : a.id)}>
-                {expanded === a.id ? "Hide" : "Details"}
-              </button>
-              {!["RESOLVED", "DISMISSED"].includes(a.status) && canAssign && !a.assigned_to && (
-                <button className="btn btn-sm btn-outline-secondary" onClick={() => assignToMe(a)}>Assign to me</button>
-              )}
-              {!["RESOLVED", "DISMISSED"].includes(a.status) && canResolve && (
-                <button className="btn btn-sm btn-outline-success" onClick={() => { setResolving(resolving === a.id ? null : a.id); setResolution(""); }}>Resolve</button>
-              )}
+      {history ? (
+        <div className="co-card">
+          <div className="section-title">{filter === "RESOLVED" ? "Resolved" : "Dismissed"} ({alerts.length})</div>
+          {alerts.length === 0 && <div className="empty">Nothing here.</div>}
+          <div className="co-rows">{alerts.map(renderRow)}</div>
+        </div>
+      ) : (
+        <>
+          <div className="co-card">
+            <div className="section-title">
+              <i className="fa-solid fa-inbox" /> Needs an owner ({unassigned.length})
             </div>
-            {expanded === a.id && <AlertDetails details={a.details} />}
-            {resolving === a.id && (
-              <div className="row g-1 align-items-end" style={{ marginTop: ".4rem", paddingLeft: "1.4rem" }}>
-                <div className="col-12 col-md-7">
-                  <input className="form-control form-control-sm" placeholder="Resolution note (audited)"
-                    value={resolution} onChange={(e) => setResolution(e.target.value)} />
-                </div>
-                <div className="col-6 col-md-2"><button className="btn btn-sm btn-outline-success w-100" onClick={() => doResolve(a, false)}>Resolve</button></div>
-                <div className="col-6 col-md-2"><button className="btn btn-sm btn-outline-secondary w-100" onClick={() => doResolve(a, true)}>Dismiss</button></div>
-              </div>
-            )}
-            {a.resolution && <div className="muted" style={{ fontSize: ".82rem", paddingLeft: "1.4rem" }}>Resolution: {a.resolution}</div>}
+            {unassigned.length === 0 && <div className="empty">Every alert has an owner. 🎉</div>}
+            <div className="co-rows">{unassigned.map(renderRow)}</div>
           </div>
-        ))}
-      </div>
+
+          <div className="co-card" style={{ marginTop: "1rem" }}>
+            <div className="section-title">
+              <i className="fa-solid fa-user-check" /> Being handled ({assigned.length})
+            </div>
+            {assigned.length === 0 && <div className="empty">None in progress.</div>}
+            <div className="co-rows">{assigned.map(renderRow)}</div>
+          </div>
+        </>
+      )}
     </>
   );
 };

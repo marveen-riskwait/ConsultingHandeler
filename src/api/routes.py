@@ -1897,6 +1897,10 @@ def list_alerts(user):
         data = a.serialize()
         cust = Customer.query.get(a.customer_id) if a.customer_id else None
         data["customer_name"] = cust.name if cust else None
+        # The assignee as a person, not an id — the assigned list reads
+        # "who is on it" at a glance in a large team.
+        assignee = User.query.get(a.assigned_to) if a.assigned_to else None
+        data["assigned_to_name"] = (assignee.full_name or assignee.email) if assignee else None
         out.append(data)
     return jsonify(out), 200
 

@@ -43,6 +43,28 @@ from api.tasks import run_screening
 api = Blueprint("api", __name__)
 
 
+def _mfa_ticket(user):
+    """A 5-minute token that proves the password step only (mfa_pending)."""
+    from flask_jwt_extended import create_access_token
+    from datetime import timedelta
+    return create_access_token(identity=str(user.id),
+                               additional_claims={"mfa_pending": True},
+                               expires_delta=timedelta(minutes=5))
+
+
+def _ticket_user():
+    """Load the user behind a pending-MFA ticket, or 401."""
+    from flask_jwt_extended import verify_jwt_in_request, get_jwt, get_jwt_identity
+    verify_jwt_in_request()
+    if not get_jwt().get("mfa_pending"):
+        raise APIException("A valid second-factor ticket is required",
+                           status_code=401)
+    user = User.query.get(int(get_jwt_identity()))
+    if user is None or not user.is_active:
+        raise APIException("Invalid or inactive user", status_code=401)
+    return user
+
+
 def _auth_response(user, status=200):
     """Return the user and plant the access + refresh cookies. The body still
     carries a token for API clients and older callers; the browser ignores it
@@ -190,6 +212,28 @@ def login():
 
     user.failed_logins = 0
     user.locked_until = None
+    db.session.commit()
+
+    # Second factor. Staff enrol TOTP; portal customers get an emailed code.
+    # A password-only pass must not open a session, so we return a short-lived
+    # pending ticket that is useless until the second factor is presented.
+    from api.engine import mfa
+    from api.security import mfa_enforced
+    if user.mfa_enabled:
+        if user.mfa_method == "EMAIL_OTP":
+            try:
+                mfa.send_email_otp(user)
+            except Exception:
+                pass
+        audit.record("LOGIN_MFA_PENDING", "user", user.id, actor=user, commit=True)
+        return jsonify({"mfa_required": True, "method": user.mfa_method,
+                        "ticket": _mfa_ticket(user)}), 200
+    if mfa_enforced() and not user.is_portal_user():
+        # Enforced but not yet enrolled: send them to set TOTP up first.
+        audit.record("LOGIN_MFA_SETUP", "user", user.id, actor=user, commit=True)
+        return jsonify({"mfa_setup_required": True,
+                        "ticket": _mfa_ticket(user)}), 200
+
     user.last_login_at = utcnow()
     audit.record("LOGIN_OK", "user", user.id, actor=user, commit=True)
     return _auth_response(user)
@@ -301,6 +345,73 @@ def reset_password():
     user.locked_until = None
     audit.record("PASSWORD_RESET", "user", user.id, actor=user, commit=True)
     return jsonify({"reset": True}), 200
+
+
+@api.route("/auth/mfa", methods=["POST"])
+@_rate_limit("10 per minute")
+def auth_mfa():
+    """Second step of login: present the ticket + the code, get the session."""
+    from api.engine import mfa
+    user = _ticket_user()
+    code = ((request.get_json(silent=True) or {}).get("code") or "").strip()
+    if not mfa.verify(user, code):
+        audit.record("LOGIN_MFA_FAILED", "user", user.id, actor=user, commit=True)
+        raise APIException("Invalid code", status_code=401)
+    user.last_login_at = utcnow()
+    audit.record("LOGIN_OK", "user", user.id, actor=user,
+                 new_value="mfa", commit=True)
+    return _auth_response(user)
+
+
+@api.route("/auth/mfa", methods=["DELETE"])
+@login_required
+def auth_mfa_disable(user):
+    from api.engine import mfa
+    if user.is_portal_user():
+        raise APIException("Email verification stays on for portal accounts.",
+                           status_code=400)
+    mfa.disable(user, actor=user)
+    return jsonify({"disabled": True}), 200
+
+
+@api.route("/auth/mfa/enroll", methods=["POST"])
+def auth_mfa_enroll():
+    """Begin TOTP enrollment during forced setup (ticket) or from the profile
+    (a live session). Returns the secret + otpauth URI to render as a QR."""
+    from api.engine import mfa
+    try:
+        user = current_user()          # live session (profile)
+    except APIException:
+        user = _ticket_user()          # forced setup at login
+    out = mfa.begin_totp_enrollment(user)
+    out["qr_svg"] = _qr_svg(out["otpauth_uri"])
+    return jsonify(out), 200
+
+
+@api.route("/auth/mfa/confirm", methods=["POST"])
+def auth_mfa_confirm():
+    """Confirm TOTP with a first code, turn it on, and — during forced setup —
+    hand back the session. Returns the one-time backup codes."""
+    from api.engine import mfa
+    setup = False
+    try:
+        user = current_user()
+    except APIException:
+        user = _ticket_user()
+        setup = True
+    code = ((request.get_json(silent=True) or {}).get("code") or "").strip()
+    backup = mfa.confirm_totp(user, code)
+    if backup is None:
+        raise APIException("That code did not match — check the app time and "
+                           "try again.", status_code=400)
+    if setup:
+        user.last_login_at = utcnow()
+        resp, status = _auth_response(user)
+        payload = resp.get_json()
+        payload["backup_codes"] = backup
+        resp.set_data(jsonify(payload).get_data())
+        return resp, status
+    return jsonify({"enabled": True, "backup_codes": backup}), 200
 
 
 @api.route("/auth/refresh", methods=["POST"])

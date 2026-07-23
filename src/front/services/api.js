@@ -23,6 +23,21 @@ function buildHeaders(method) {
 
 let refreshing = null;   // de-dupe concurrent refreshes
 
+// During the 2FA step there is no session cookie yet; the short-lived ticket
+// authorizes the call as a bearer token.
+async function ticketPost(path, ticket, body) {
+  const res = await fetch(`${BASE}/api${path}`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json",
+               Authorization: `Bearer ${ticket}` },
+    body: JSON.stringify(body || {}),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || `Request failed (${res.status})`);
+  return data;
+}
+
 async function tryRefresh() {
   if (!refreshing) {
     refreshing = fetch(`${BASE}/api/auth/refresh`, {
@@ -74,6 +89,13 @@ export const api = {
   resendVerification: () => request("/auth/resend-verification", { method: "POST" }),
   forgotPassword: (email) => request("/auth/forgot-password", { method: "POST", body: { email } }),
   resetPassword: (token, password) => request("/auth/reset-password", { method: "POST", body: { token, password } }),
+  // MFA step-up during login uses the pending ticket as a bearer token.
+  mfaVerify: (ticket, code) => ticketPost("/auth/mfa", ticket, { code }),
+  mfaEnroll: (ticket) => ticketPost("/auth/mfa/enroll", ticket, {}),
+  mfaConfirm: (ticket, code) => ticketPost("/auth/mfa/confirm", ticket, { code }),
+  mfaEnrollSession: () => request("/auth/mfa/enroll", { method: "POST" }),
+  mfaConfirmSession: (code) => request("/auth/mfa/confirm", { method: "POST", body: { code } }),
+  mfaDisable: () => request("/auth/mfa", { method: "DELETE" }),
 
   // customers
   customers: (archived) => request(`/customers${archived ? "?archived=1" : ""}`),

@@ -32,7 +32,12 @@ def make_token(user):
 
 
 def current_user():
+    from flask_jwt_extended import get_jwt
     verify_jwt_in_request()
+    # A pending-MFA ticket proves the password only; it must not open anything
+    # until the second factor is presented at /auth/mfa.
+    if get_jwt().get("mfa_pending"):
+        raise APIException("Second factor required", status_code=401)
     uid = get_jwt_identity()
     user = User.query.get(int(uid)) if uid is not None else None
     if user is None or not user.is_active:

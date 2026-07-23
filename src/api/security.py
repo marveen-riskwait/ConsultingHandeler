@@ -179,3 +179,9 @@ def apply_security_headers(app):
         frame_options="DENY",
         referrer_policy="strict-origin-when-cross-origin",
     )
+
+
+def mfa_enforced():
+    """Whether staff must have 2FA. Off by default so a fresh/demo deployment
+    is not locked out; set MFA_ENFORCED=true to require it in production."""
+    return os.getenv("MFA_ENFORCED", "false").lower() == "true"

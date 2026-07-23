@@ -35,8 +35,12 @@ class CompaniesHouseKYBProvider(KYBProvider):
     adapter_key = "companies_house"
 
     def _api_key(self):
-        return (self.credentials.get("api_key")
-                or os.getenv("COMPANIES_HOUSE_API_KEY"))
+        # Stripped defensively: a key pasted with a stray newline turns the
+        # Authorization header invalid and the registry answers HTTP 400
+        # ("Invalid Authorization header") — seen with a real key.
+        key = (self.credentials.get("api_key")
+               or os.getenv("COMPANIES_HOUSE_API_KEY") or "")
+        return key.strip() or None
 
     def _get(self, path, params=None):
         key = self._api_key()

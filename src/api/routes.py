@@ -1802,7 +1802,9 @@ def set_provider_credential(user, pid):
         raise APIException("Provider not found", status_code=404)
     body = request.get_json(silent=True) or {}
     key_name = (body.get("key_name") or "").strip()
-    secret = body.get("secret_value")
+    # Edge whitespace is never part of a secret — but a newline picked up by
+    # copy-paste breaks Authorization headers downstream (real incident).
+    secret = (body.get("secret_value") or "").strip()
     if not key_name or not secret:
         raise APIException("key_name and secret_value are required", status_code=400)
     cred = (ProviderCredential.query

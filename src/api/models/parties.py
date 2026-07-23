@@ -14,9 +14,14 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from api.models.base import db, utcnow
 
-PARTY_KINDS = ("PERSON", "ORGANIZATION")
+PARTY_KINDS = ("PERSON", "ORGANIZATION", "TRUST")
 # How one party relates to the entity it points at.
-RELATIONSHIP_TYPES = ("SHAREHOLDER", "DIRECTOR", "UBO", "CONTROL", "AUTHORIZED_REP")
+RELATIONSHIP_TYPES = ("SHAREHOLDER", "DIRECTOR", "UBO", "CONTROL", "AUTHORIZED_REP",
+                      "SETTLOR", "TRUSTEE", "PROTECTOR", "BENEFICIARY")
+# Trust/legal-arrangement roles: UBO status here is ROLE-based, never a
+# percentage — FATF R.25 / EU AMLR treat every one of these as a beneficial
+# owner of the arrangement, whatever they "own".
+TRUST_ROLES = ("SETTLOR", "TRUSTEE", "PROTECTOR", "BENEFICIARY")
 # For control that is not (only) about share percentage (per the document:
 # voting / management / contractual control on top of direct/indirect ownership).
 CONTROL_TYPES = ("VOTING_CONTROL", "MANAGEMENT_CONTROL", "CONTRACTUAL_CONTROL", "OTHER")
@@ -89,8 +94,16 @@ class Person(Party):
 
 
 class LegalEntity(Party):
-    """A legal entity (company, trust, fund, ...) — KYB subject or owner."""
+    """A legal entity (company, fund, ...) — KYB subject or owner."""
     __mapper_args__ = {"polymorphic_identity": "ORGANIZATION"}
+
+
+class Trust(Party):
+    """A trust / legal arrangement — NOT a legal person. It has no
+    shareholders: its beneficial owners are the holders of its ROLES
+    (settlor, trustee(s), protector, beneficiaries), all of them, with no
+    percentage threshold (FATF R.25)."""
+    __mapper_args__ = {"polymorphic_identity": "TRUST"}
 
 
 class Address(db.Model):

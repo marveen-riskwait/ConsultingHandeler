@@ -232,6 +232,56 @@ FORM_SECTIONS = [
         ],
     },
 
+    # ================================ TRUST =================================
+    {
+        "key": "trust_identity", "title": "Trust identification",
+        "icon": "fa-scale-balanced", "applies": "TRUST", "min_risk_rank": 0,
+        "description": ("The arrangement itself: what kind of trust, under "
+                        "which law, since when."),
+        "fields": [
+            _f("trust_type", "Type of trust", "select",
+               options=["Discretionary", "Fixed interest", "Revocable",
+                        "Irrevocable", "Charitable", "Purpose", "Unit",
+                        "Employee benefit", "Other"],
+               required=True, category="REGISTRATION"),
+            _f("governing_law", "Governing law (country)", "country",
+               required=True, category="REGISTRATION"),
+            _f("date_established", "Date established", "date",
+               category="REGISTRATION"),
+            _f("trust_registered", "Registered with a national register "
+               "(e.g. HMRC TRS, national fiducie register)?", "select",
+               options=YES_NO, category="REGISTRATION"),
+            _f("trust_register_reference", "Register reference (if registered)",
+               category="REGISTRATION"),
+            _f("purpose_of_trust", "Purpose of the trust", "textarea",
+               required=True, category="REGISTRATION",
+               help="Estate planning, asset protection, charity, employee "
+                    "benefits… what the arrangement is FOR."),
+        ],
+    },
+    {
+        "key": "trust_parties", "title": "Trust parties (roles)",
+        "icon": "fa-people-arrows", "applies": "TRUST", "min_risk_rank": 0,
+        "description": ("FATF R.25: EVERY settlor, trustee, protector and "
+                        "beneficiary is a beneficial owner of the arrangement "
+                        "— no percentage threshold. Declare them here, then "
+                        "record each one in the Ownership & UBOs card with "
+                        "their role."),
+        "fields": [
+            _f("settlor_names", "Settlor(s)", "textarea", required=True,
+               category="OWNERSHIP",
+               help="Who created the trust and contributed the assets."),
+            _f("trustee_names", "Trustee(s)", "textarea", required=True,
+               category="OWNERSHIP",
+               help="Legal owners of the assets — individuals or a corporate "
+                    "trustee (whose own controllers must then be identified)."),
+            _f("protector_names", "Protector (if any)", category="OWNERSHIP"),
+            _f("beneficiary_names", "Beneficiaries or class of beneficiaries",
+               "textarea", required=True, category="OWNERSHIP",
+               help="Named persons, or the class (e.g. 'descendants of the "
+                    "settlor') when not yet individualised."),
+        ],
+    },
     # ================================= ANY ==================================
     {
         "key": "purpose", "title": "Purpose & expected activity",
@@ -319,6 +369,14 @@ FORM_SECTIONS = [
 # ------------------------------ Proof checklist -----------------------------
 # doc_type values feed Document rows; the requirement engine matches on them.
 PROOF_CHECKLIST = [
+    {"doc_type": "TRUST_DEED", "label": "Trust deed / declaration of trust",
+     "applies": "TRUST",
+     "examples": "The signed deed or declaration establishing the trust, "
+                 "including amendments (letters of wishes where relevant)."},
+    {"doc_type": "TRUSTEE_ID", "label": "Trustee identity document(s)",
+     "applies": "TRUST",
+     "examples": "Passport/ID of each individual trustee; registry extract "
+                 "for a corporate trustee."},
     {"doc_type": "PASSPORT", "label": "Identity document",
      "applies": "INDIVIDUAL",
      "examples": "Passport, national ID card, residence permit."},

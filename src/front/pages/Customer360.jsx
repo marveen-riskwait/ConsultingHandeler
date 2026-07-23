@@ -646,7 +646,12 @@ export const Customer360 = () => {
                     <span className={`dotsev ${u.is_ubo ? "HIGH" : "INFO"}`} />
                     <div className="grow">
                       <div className="title">{u.party.name}</div>
-                      <div className="meta">{u.party.nationality || "—"}{u.via_control ? " · control" : ""}</div>
+                      <div className="meta">
+                        {u.party.nationality || "—"}
+                        {u.roles && u.roles.length > 0
+                          ? ` · ${u.roles.map((r) => r.toLowerCase()).join(", ")}`
+                          : u.via_control ? " · control" : ""}
+                      </div>
                     </div>
                     <span className={`chip ${u.is_ubo ? "HIGH" : "INFO"}`}>
                       {u.effective_ownership}%{u.is_ubo ? " · UBO" : ""}
@@ -692,6 +697,10 @@ export const Customer360 = () => {
                     <option value="DIRECTOR">Director</option>
                     <option value="UBO">UBO</option>
                     <option value="CONTROL">Control</option>
+                    <option value="SETTLOR">Settlor</option>
+                    <option value="TRUSTEE">Trustee</option>
+                    <option value="PROTECTOR">Protector</option>
+                    <option value="BENEFICIARY">Beneficiary</option>
                   </select>
                 </div>
                 <div className="col-6 col-md-2">
@@ -699,6 +708,7 @@ export const Customer360 = () => {
                     onChange={(e) => setOwnerForm({ ...ownerForm, owner_kind: e.target.value })}>
                     <option value="PERSON">Person</option>
                     <option value="ORGANIZATION">Company</option>
+                    <option value="TRUST">Trust</option>
                   </select>
                 </div>
                 <div className="col-6 col-md-2">

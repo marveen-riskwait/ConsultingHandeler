@@ -100,6 +100,7 @@ export const Customers = () => {
                 onChange={(e) => setForm({ ...form, customer_type: e.target.value })}>
                 <option value="INDIVIDUAL">Individual</option>
                 <option value="COMPANY">Company</option>
+                <option value="TRUST">Trust / legal arrangement</option>
               </select>
             </div>
             <div className="col-md-3">

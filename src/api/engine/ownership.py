@@ -8,8 +8,13 @@ multiplying percentages along each path and summing across paths.
     => John's effective ownership of Alpha = 0.80 * 0.60 = 48%
 
 A person at or above UBO_THRESHOLD (25%) is flagged as a UBO.
+
+Trusts follow a different rule (FATF R.25): UBO status is ROLE-based — every
+settlor, trustee, protector and beneficiary is a beneficial owner of the
+arrangement regardless of percentage, and the controllers of a corporate
+trustee are registrable through it.
 """
-from api.models import Party, OwnershipRelationship, UBO_THRESHOLD
+from api.models import Party, OwnershipRelationship, UBO_THRESHOLD, TRUST_ROLES
 
 
 def _incoming(owned_id):
@@ -25,8 +30,9 @@ def compute_ubos(customer):
 
     person_pct = {}       # person party_id -> total effective fraction
     control_persons = set()
+    person_roles = {}     # person party_id -> {trust roles held}
 
-    def dfs(node_id, factor, path):
+    def dfs(node_id, factor, path, via_role=False):
         for e in _incoming(node_id):
             owner_id = e.owner_party_id
             if owner_id in path:           # cycle guard
@@ -34,13 +40,24 @@ def compute_ubos(customer):
             owner = Party.query.get(owner_id)
             if owner is None:
                 continue
-            contribution = factor * ((e.percentage or 0) / 100.0)
+            is_role = e.relationship_type in TRUST_ROLES
+            # A role edge carries control, not a share: the walk continues at
+            # full factor so a corporate trustee's own controllers surface.
+            contribution = (factor if is_role
+                            else factor * ((e.percentage or 0) / 100.0))
             if owner.kind == "PERSON":
-                person_pct[owner_id] = person_pct.get(owner_id, 0.0) + contribution
+                person_pct[owner_id] = person_pct.get(owner_id, 0.0) \
+                    + (0.0 if is_role else contribution)
+                if is_role or via_role:
+                    control_persons.add(owner_id)
+                    if is_role:
+                        person_roles.setdefault(owner_id, set()).add(
+                            e.relationship_type)
                 if e.relationship_type in ("UBO", "CONTROL"):
                     control_persons.add(owner_id)
             else:
-                dfs(owner_id, contribution, path | {owner_id})
+                dfs(owner_id, contribution, path | {owner_id},
+                    via_role=via_role or is_role)
 
     dfs(root, 1.0, {root})
 
@@ -53,8 +70,10 @@ def compute_ubos(customer):
             "effective_ownership": pct,
             "is_ubo": pct >= UBO_THRESHOLD or pid in control_persons,
             "via_control": pid in control_persons,
+            "roles": sorted(person_roles.get(pid, ())),
         })
-    result.sort(key=lambda x: -x["effective_ownership"])
+    result.sort(key=lambda x: (-x["effective_ownership"],
+                               x["party"]["name"] or ""))
     return result
 
 
@@ -67,9 +86,13 @@ def is_complex(customer):
         return False
     root = graph["root_id"]
     multi_level = any(e["owned_party_id"] != root for e in graph["edges"])
-    org_owners = any(n["kind"] == "ORGANIZATION" and n["id"] != root
+    # A trust anywhere in the chain is complexity by definition — legal
+    # ownership and economic benefit are deliberately split.
+    org_owners = any(n["kind"] in ("ORGANIZATION", "TRUST") and n["id"] != root
                      for n in graph["nodes"])
-    return multi_level or org_owners or len(graph["edges"]) > 3
+    trust_root = any(n["kind"] == "TRUST" and n["id"] == root
+                     for n in graph["nodes"])
+    return multi_level or org_owners or trust_root or len(graph["edges"]) > 3
 
 
 def directors_of(customer):

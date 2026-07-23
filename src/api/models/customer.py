@@ -11,7 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from api.models.base import db, utcnow
 
-CUSTOMER_TYPES = ("INDIVIDUAL", "COMPANY")
+CUSTOMER_TYPES = ("INDIVIDUAL", "COMPANY", "TRUST")
 RISK_LEVELS = ("LOW", "MEDIUM", "HIGH", "CRITICAL")
 
 HIGH_RISK_COUNTRIES = {"Iran", "North Korea", "Syria", "Myanmar", "Russia", "Panama"}

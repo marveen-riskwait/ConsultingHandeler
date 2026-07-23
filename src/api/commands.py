@@ -258,6 +258,15 @@ def _seed_org_structure(org):
 # System-level requirement definitions (organization_id = NULL).
 # min_risk_rank: 0=always, 2=HIGH and above (EDD).
 DEFAULT_REQUIREMENTS = [
+    # Trusts / legal arrangements (FATF R.25: role-based beneficial ownership)
+    ("TRUST_DEED", "Trust deed / declaration of trust", "DOCUMENT", "TRUST", 0, None, "TRUST_DEED"),
+    ("TRUSTEE_ID", "Trustee identity document(s)", "DOCUMENT", "TRUST", 0, None, "TRUSTEE_ID"),
+    ("TRUST_TYPE", "Type of trust", "DATA", "TRUST", 0, "trust_type", None),
+    ("GOVERNING_LAW", "Governing law", "DATA", "TRUST", 0, "governing_law", None),
+    ("PURPOSE_OF_TRUST", "Purpose of the trust", "DATA", "TRUST", 0, "purpose_of_trust", None),
+    ("SETTLOR_NAMES", "Settlor(s) declared", "DATA", "TRUST", 0, "settlor_names", None),
+    ("TRUSTEE_NAMES", "Trustee(s) declared", "DATA", "TRUST", 0, "trustee_names", None),
+    ("BENEFICIARY_NAMES", "Beneficiaries / class declared", "DATA", "TRUST", 0, "beneficiary_names", None),
     # Individuals
     ("IDENTITY_DOCUMENT", "Identity document", "DOCUMENT", "INDIVIDUAL", 0, None, "PASSPORT"),
     ("PROOF_OF_ADDRESS", "Proof of address", "DOCUMENT", "INDIVIDUAL", 0, None, "PROOF_OF_ADDRESS"),

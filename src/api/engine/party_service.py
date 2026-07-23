@@ -6,7 +6,7 @@ ADDRESS_CHANGED) so the rules engine reacts, risk is recomputed, and the
 consultant is notified — the document's continuous-compliance philosophy.
 """
 from api.models import (
-    db, Person, LegalEntity, Party, Address, OwnershipRelationship,
+    db, Person, LegalEntity, Trust, Party, Address, OwnershipRelationship,
     utcnow,
 )
 from api.engine import audit, ownership
@@ -14,18 +14,24 @@ from api.engine.events import emit_event
 
 
 def _party_class(kind):
-    return LegalEntity if kind == "ORGANIZATION" else Person
+    if kind == "ORGANIZATION":
+        return LegalEntity
+    if kind == "TRUST":
+        return Trust
+    return Person
 
 
 def ensure_root_party(customer):
     if customer.root_party_id:
         return Party.query.get(customer.root_party_id)
-    cls = _party_class("ORGANIZATION" if customer.customer_type == "COMPANY" else "PERSON")
+    kind = {"COMPANY": "ORGANIZATION", "TRUST": "TRUST"}.get(
+        customer.customer_type, "PERSON")
+    cls = _party_class(kind)
     party = cls(
         organization_id=customer.organization_id,
         name=customer.name, customer_id=customer.id,
         business_activity=customer.business_activity,
-        country_of_incorporation=customer.country if cls is LegalEntity else None,
+        country_of_incorporation=customer.country if cls is not Person else None,
         country_of_residence=customer.country if cls is Person else None,
     )
     db.session.add(party)

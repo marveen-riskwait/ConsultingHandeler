@@ -54,6 +54,20 @@ DEFAULT_RULES = [
         ],
     },
     {
+        "name": "IP fraud signal -> review",
+        "event_type": "IP_FRAUD_SIGNAL",
+        "conditions": {},
+        "actions": [
+            {"type": "CREATE_TASK", "task_type": "FRAUD_REVIEW",
+             "title": "Review onboarding IP fraud signal",
+             "priority": "HIGH", "due_days": 2},
+            {"type": "NOTIFY", "severity": "HIGH", "requires_action": True,
+             "roles": ["COMPLIANCE_OFFICER", "ANALYST", "KYC_ANALYST"],
+             "title": "IP fraud signal",
+             "message": "An onboarding IP scored high on abuse signals — review."},
+        ],
+    },
+    {
         "name": "Unusual transaction -> investigation",
         "event_type": "TRANSACTION_ALERT",
         "conditions": {},
@@ -489,6 +503,9 @@ def _seed_providers(org):
         # Real UK registry lookups; enabled because the adapter reports a clear
         # error until an api_key credential (or COMPANIES_HOUSE_API_KEY) is set.
         ("Companies House", "KYB", "companies_house", True, []),
+        # Free-tier IP fraud signals; enabled and dormant until a key is set
+        # (adapter reports a clear "no key" error) — ready to key.
+        ("AbuseIPDB", "FRAUD", "abuseipdb", True, []),
     ]
     for name, ptype, adapter, enabled, creds in specs:
         provider = Provider.query.filter_by(name=name, organization_id=org.id).first()

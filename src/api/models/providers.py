@@ -13,7 +13,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from api.models.base import db, utcnow
 
-PROVIDER_TYPES = ("KYC", "KYB", "AML", "SCREENING", "IDENTITY", "DOCUMENT")
+PROVIDER_TYPES = ("KYC", "KYB", "AML", "SCREENING", "IDENTITY", "DOCUMENT", "FRAUD")
 HEALTH_STATUSES = ("UP", "DEGRADED", "DOWN", "UNKNOWN")
 
 

@@ -969,6 +969,46 @@ def ingest_transactions(user, cid):
 
 
 # ---------------------------------------------------------------------------
+# Fraud signals — onboarding IP check (AbuseIPDB)
+# ---------------------------------------------------------------------------
+@api.route("/customers/<int:cid>/ip-check", methods=["POST"])
+@permission_required("screening.run")
+def customer_ip_check(user, cid):
+    """Check an onboarding IP for fraud signals. A high abuse score raises an
+    IP_FRAUD_SIGNAL onto the spine (task + alert)."""
+    from api.engine.provider_service import find_provider
+    from api.integrations.providers.registry import get_adapter
+    from api.engine.events import emit_event
+    from api.engine import audit as audit_engine
+    customer = _get_customer_for(user, cid)
+    ip = (request.get_json(silent=True) or {}).get("ip", "").strip()
+    if not ip:
+        raise APIException("An IP address is required", status_code=400)
+
+    provider = find_provider(user.organization_id, name="AbuseIPDB",
+                             provider_type="FRAUD")
+    if provider is None:
+        raise APIException("No AbuseIPDB provider configured", status_code=409)
+    adapter = get_adapter(provider)
+    try:
+        result = adapter.check(ip)
+    except RuntimeError as exc:
+        raise APIException(str(exc), status_code=409)
+
+    threshold = 50
+    risky = result["abuse_score"] >= threshold or result["is_tor"]
+    audit_engine.record("IP_CHECKED", "customer", cid, actor=user,
+                        new_value=f"{ip} · abuse {result['abuse_score']}"
+                                  + (" · TOR" if result["is_tor"] else ""),
+                        commit=True)
+    if risky:
+        emit_event("IP_FRAUD_SIGNAL", customer_id=cid, severity="HIGH",
+                   source="abuseipdb", actor=user,
+                   payload={"ip": ip, **result})
+    return jsonify({"result": result, "risky": risky, "threshold": threshold}), 200
+
+
+# ---------------------------------------------------------------------------
 # Data retention & subject access (GDPR)
 # ---------------------------------------------------------------------------
 @api.route("/customers/<int:cid>/data-export", methods=["GET"])

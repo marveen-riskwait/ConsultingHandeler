@@ -4,6 +4,7 @@ from api.integrations.providers.real_adapters import (
     SumsubKYCProvider, TruliooKYCProvider, ComplyAdvantageAMLProvider,
 )
 from api.integrations.providers.companies_house import CompaniesHouseKYBProvider
+from api.integrations.fraud.abuseipdb import AbuseIPDBProvider
 
 ADAPTERS = {
     "mock": MockKYCProvider,          # default KYC
@@ -13,6 +14,7 @@ ADAPTERS = {
     "trulioo": TruliooKYCProvider,
     "comply_advantage": ComplyAdvantageAMLProvider,
     "companies_house": CompaniesHouseKYBProvider,
+    "abuseipdb": AbuseIPDBProvider,
 }
 
 

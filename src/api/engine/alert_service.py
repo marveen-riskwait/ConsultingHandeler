@@ -8,7 +8,7 @@ from api.engine import audit
 
 # Events that always deserve an alert regardless of severity.
 _ALWAYS_ALERT = {"SANCTIONS_MATCH_FOUND", "PEP_DETECTED", "UBO_CHANGED",
-                 "PROVIDER_STATUS_CHANGED"}
+                 "PROVIDER_STATUS_CHANGED", "TRANSACTION_ALERT"}
 
 
 def maybe_create_from_event(event):

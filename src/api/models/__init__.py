@@ -73,8 +73,12 @@ from api.models.sanctions import (
     SanctionedEntity, WatchlistImport, SanctionedWallet, SANCTION_SOURCES, SANCTION_ENTITY_TYPES,
 )
 from api.models.chat import ChatRoom, ChatMember, ChatMessage, CHAT_MESSAGE_KINDS
+from api.models.transactions import (
+    Transaction, DIRECTIONS, METHODS, DETECTORS,
+)
 
 __all__ = [
+    "Transaction", "DIRECTIONS", "METHODS", "DETECTORS",
     "db", "utcnow",
     "Permission", "Role", "role_permissions", "user_roles", "user_permissions",
     "PERMISSION_CATALOG", "ALL_CODES", "DEFAULT_ROLE_PERMISSIONS",

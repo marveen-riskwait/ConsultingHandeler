@@ -928,6 +928,45 @@ def delete_field(user, cid, fid):
     return jsonify({"deleted": True}), 200
 
 
+# ---------------------------------------------------------------------------
+# Transaction monitoring
+# ---------------------------------------------------------------------------
+@api.route("/customers/<int:cid>/transactions", methods=["GET"])
+@permission_required("transaction.view")
+def list_transactions(user, cid):
+    from api.models import Transaction
+    customer = _get_customer_for(user, cid)
+    q = Transaction.query.filter_by(customer_id=cid)
+    if request.args.get("flagged") == "true":
+        q = q.filter(Transaction.flagged.is_(True))
+    txns = q.order_by(Transaction.booked_at.desc()).limit(200).all()
+    return jsonify([t.serialize() for t in txns]), 200
+
+
+@api.route("/customers/<int:cid>/transactions", methods=["POST"])
+@permission_required("transaction.ingest")
+def ingest_transactions(user, cid):
+    """Ingest one transaction or a batch. Each is monitored on the way in;
+    flagged ones raise a TRANSACTION_ALERT onto the compliance spine."""
+    from api.engine import transaction_monitoring
+    customer = _get_customer_for(user, cid)
+    body = request.get_json(silent=True) or {}
+    rows = body.get("transactions")
+    if rows is None:
+        rows = [body]                      # single-transaction shorthand
+    if not isinstance(rows, list) or not rows:
+        raise APIException("Provide a transaction or a 'transactions' list",
+                           status_code=400)
+    out, flagged = [], 0
+    for row in rows:
+        tx, fired = transaction_monitoring.ingest(customer, row, actor=user)
+        out.append(tx.serialize())
+        if fired:
+            flagged += 1
+    return jsonify({"ingested": len(out), "flagged": flagged,
+                    "transactions": out}), 201
+
+
 @api.route("/customers/<int:cid>/requirements", methods=["GET"])
 @permission_required("customer.view")
 def customer_requirements(user, cid):

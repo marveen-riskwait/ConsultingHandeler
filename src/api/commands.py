@@ -54,6 +54,23 @@ DEFAULT_RULES = [
         ],
     },
     {
+        "name": "Unusual transaction -> investigation",
+        "event_type": "TRANSACTION_ALERT",
+        "conditions": {},
+        "actions": [
+            {"type": "CREATE_CASE", "case_type": "TRANSACTION_MONITORING",
+             "title": "Unusual transaction activity",
+             "priority": "HIGH", "due_days": 3},
+            {"type": "CREATE_TASK", "task_type": "TRANSACTION_REVIEW",
+             "title": "Review flagged transaction activity",
+             "priority": "HIGH", "due_days": 3},
+            {"type": "NOTIFY", "severity": "HIGH", "requires_action": True,
+             "roles": ["COMPLIANCE_OFFICER", "ANALYST", "KYC_ANALYST"],
+             "title": "Unusual transaction activity",
+             "message": "A transaction was flagged by monitoring — review the activity."},
+        ],
+    },
+    {
         "name": "Adverse media -> review",
         "event_type": "ADVERSE_MEDIA_DETECTED",
         "conditions": {},

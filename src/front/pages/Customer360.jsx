@@ -12,6 +12,17 @@ import { MatchDetails } from "../components/MatchDetails";
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : "—");
 
+// Human labels for the transaction-monitoring detector codes.
+const DETECTOR_LABELS = {
+  LARGE_AMOUNT: "Large amount",
+  HIGH_RISK_COUNTRY: "High-risk country",
+  STRUCTURING: "Structuring",
+  VELOCITY: "Velocity",
+  RAPID_PASSTHROUGH: "Pass-through",
+  CASH_INTENSIVE: "Cash-intensive",
+};
+const money = (a, c) => `${Number(a || 0).toLocaleString()} ${c || ""}`.trim();
+
 // Map a screening-match status to a severity chip colour.
 const MATCH_SEV = {
   CONFIRMED: "CRITICAL", ESCALATED: "HIGH",
@@ -58,6 +69,9 @@ export const Customer360 = () => {
   const [graph, setGraph] = useState(null);
   const [addresses, setAddresses] = useState([]);
   const [fields, setFields] = useState([]);
+  const [txns, setTxns] = useState([]);
+  const [txForm, setTxForm] = useState({ direction: "INBOUND", amount: "", currency: "EUR", method: "SEPA", counterparty_name: "", counterparty_country: "" });
+  const [txBusy, setTxBusy] = useState(false);
   const [error, setError] = useState(null);
   const [screening, setScreening] = useState(false);
   const [ownerForm, setOwnerForm] = useState({ owner_name: "", owner_kind: "PERSON", relationship_type: "SHAREHOLDER", percentage: "", country: "" });
@@ -110,9 +124,21 @@ export const Customer360 = () => {
     api.ownership(id).then(setGraph).catch(() => setGraph(null));
     api.addresses(id).then(setAddresses).catch(() => setAddresses([]));
     api.fields(id).then(setFields).catch(() => setFields([]));
+    api.transactions(id).then(setTxns).catch(() => setTxns([]));
   }, [id]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadKyb(); }, [loadKyb, screening]);
+
+  const submitTx = async (e) => {
+    e.preventDefault();
+    setError(null); setTxBusy(true);
+    try {
+      await api.ingestTransaction(id, { ...txForm, amount: Number(txForm.amount) || 0 });
+      setTxForm({ direction: "INBOUND", amount: "", currency: "EUR", method: "SEPA", counterparty_name: "", counterparty_country: "" });
+      await load(); loadKyb();   // reload: a flag may have raised an alert
+    } catch (err) { setError(err.message); }
+    finally { setTxBusy(false); }
+  };
 
   const submitField = async (e) => {
     e.preventDefault();
@@ -825,6 +851,94 @@ export const Customer360 = () => {
           </div>
         </div>
       </div>
+
+      {/* Transaction monitoring */}
+      {can(store.user, "transaction.view") && (
+      <div className="row g-3 mt-0">
+        <div className="col-12">
+          <div className="co-card">
+            <div className="section-title">
+              Transactions {txns.length > 0 && `(${txns.length}`}
+              {txns.filter((t) => t.flagged).length > 0 &&
+                <span style={{ color: "var(--sev-high)" }}> · {txns.filter((t) => t.flagged).length} flagged</span>}
+              {txns.length > 0 && ")"}
+            </div>
+            {txns.length === 0 && (
+              <div className="muted" style={{ fontSize: ".88rem" }}>
+                No transactions recorded. Monitoring runs on each one ingested.
+              </div>
+            )}
+            <div className="co-rows">
+            {txns.map((t) => (
+              <div className="work-row" key={t.id}>
+                <span className={`dotsev ${t.flagged ? "HIGH" : "LOW"}`} />
+                <div className="grow">
+                  <div className="title">
+                    <i className={`fa-solid fa-arrow-${t.direction === "INBOUND" ? "down" : "up"}`}
+                      style={{ color: t.direction === "INBOUND" ? "var(--sev-low)" : "var(--sev-high)", marginRight: 6 }} />
+                    {money(t.amount, t.currency)}
+                    {t.counterparty_name ? ` · ${t.counterparty_name}` : ""}
+                    {t.counterparty_country ? ` (${t.counterparty_country})` : ""}
+                  </div>
+                  <div className="meta">
+                    {t.method || "—"} · {t.booked_at ? new Date(t.booked_at).toLocaleDateString() : "—"}
+                    {(t.flags || []).length > 0 && (
+                      <> · {t.flags.map((f) => (
+                        <span key={f} className="chip HIGH" style={{ marginLeft: 4 }}>
+                          {DETECTOR_LABELS[f] || f}
+                        </span>
+                      ))}</>
+                    )}
+                  </div>
+                </div>
+                {t.flagged
+                  ? <span className="chip HIGH">FLAGGED</span>
+                  : <span className="chip LOW">clear</span>}
+              </div>
+            ))}
+            </div>
+            {can(store.user, "transaction.ingest") && (
+              <form onSubmit={submitTx} className="row g-1 align-items-end"
+                style={{ marginTop: ".75rem", borderTop: "1px solid var(--co-border)", paddingTop: ".6rem" }}>
+                <div className="col-6 col-md-2">
+                  <select className="form-select form-select-sm" value={txForm.direction}
+                    onChange={(e) => setTxForm({ ...txForm, direction: e.target.value })}>
+                    <option value="INBOUND">Inbound</option>
+                    <option value="OUTBOUND">Outbound</option>
+                  </select>
+                </div>
+                <div className="col-6 col-md-2">
+                  <input className="form-control form-control-sm" placeholder="Amount" type="number" min="0" required
+                    value={txForm.amount} onChange={(e) => setTxForm({ ...txForm, amount: e.target.value })} />
+                </div>
+                <div className="col-4 col-md-1">
+                  <input className="form-control form-control-sm" placeholder="CUR" maxLength={3}
+                    value={txForm.currency} onChange={(e) => setTxForm({ ...txForm, currency: e.target.value.toUpperCase() })} />
+                </div>
+                <div className="col-8 col-md-2">
+                  <select className="form-select form-select-sm" value={txForm.method}
+                    onChange={(e) => setTxForm({ ...txForm, method: e.target.value })}>
+                    {["SEPA", "SWIFT", "CARD", "CASH", "CRYPTO", "EMONEY", "OTHER"].map((m) =>
+                      <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+                <div className="col-6 col-md-2">
+                  <input className="form-control form-control-sm" placeholder="Counterparty"
+                    value={txForm.counterparty_name} onChange={(e) => setTxForm({ ...txForm, counterparty_name: e.target.value })} />
+                </div>
+                <div className="col-4 col-md-2">
+                  <input className="form-control form-control-sm" placeholder="Country"
+                    value={txForm.counterparty_country} onChange={(e) => setTxForm({ ...txForm, counterparty_country: e.target.value })} />
+                </div>
+                <div className="col-2 col-md-1">
+                  <button className="btn btn-sm btn-co w-100" disabled={txBusy}>Add</button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      </div>
+      )}
     </>
   );
 };

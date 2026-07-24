@@ -144,6 +144,8 @@ export const api = {
   addOwnership: (id, payload) => request(`/customers/${id}/ownership`, { method: "POST", body: payload }),
   removeOwnership: (id, edgeId) => request(`/customers/${id}/ownership/${edgeId}`, { method: "DELETE" }),
   removeField: (id, fid) => request(`/customers/${id}/fields/${fid}`, { method: "DELETE" }),
+  transactions: (id, flaggedOnly) => request(`/customers/${id}/transactions${flaggedOnly ? "?flagged=true" : ""}`),
+  ingestTransaction: (id, payload) => request(`/customers/${id}/transactions`, { method: "POST", body: payload }),
   addresses: (id) => request(`/customers/${id}/addresses`),
   addAddress: (id, payload) => request(`/customers/${id}/addresses`, { method: "POST", body: payload }),
   fields: (id) => request(`/customers/${id}/fields`),

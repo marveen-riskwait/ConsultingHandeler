@@ -74,6 +74,9 @@ PERMISSION_CATALOG = [
     ("task.assign", "Assign tasks"),
     ("task.complete", "Complete tasks"),
 
+    ("transaction.view", "View transactions & monitoring"),
+    ("transaction.ingest", "Ingest / import transactions"),
+
     ("document.view", "View documents"),
     ("document.upload", "Upload documents"),
     ("document.verify", "Verify documents"),
@@ -118,6 +121,7 @@ _ANALYST_BASE = [
     "risk.view", "risk.calculate",
     "case.view", "case.create", "case.update",
     "task.view", "task.create", "task.complete",
+    "transaction.view", "transaction.ingest",
     # Reading a passport scan and sending back a blurry one is first-line
     # work; approving the customer stays with the officer (kyc.approve).
     "document.view", "document.upload", "document.verify",
@@ -181,6 +185,7 @@ DEFAULT_ROLE_PERMISSIONS = {
     "AUDITOR": [
         "workspace.view", "customer.view", "kyc.view", "kyb.view",
         "screening.view", "risk.view", "case.view", "task.view",
+        "transaction.view",
         "document.view", "workflow.view", "rule.view", "audit.view",
         "regulatory.view", "management.view", "management.team_view",
         "management.performance_view",

@@ -64,6 +64,8 @@ class Customer(db.Model):
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     last_review_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    # When the relationship ended (set on archive) — the retention clock start.
+    archived_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
 
     documents: Mapped[list["Document"]] = relationship(back_populates="customer")
     events: Mapped[list["ComplianceEvent"]] = relationship(back_populates="customer")

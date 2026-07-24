@@ -5,6 +5,7 @@ POST /customers/<id>/screen — it kicks off the whole spine:
 screening -> event -> rules -> risk -> case/task/notification -> (human) decision.
 """
 import os
+import json
 from datetime import timedelta
 
 from flask import request, jsonify, Blueprint, Response
@@ -965,6 +966,58 @@ def ingest_transactions(user, cid):
             flagged += 1
     return jsonify({"ingested": len(out), "flagged": flagged,
                     "transactions": out}), 201
+
+
+# ---------------------------------------------------------------------------
+# Data retention & subject access (GDPR)
+# ---------------------------------------------------------------------------
+@api.route("/customers/<int:cid>/data-export", methods=["GET"])
+@permission_required("data.export")
+def customer_data_export(user, cid):
+    """Right of access (GDPR Art. 15): everything held on the subject."""
+    from api.engine import retention
+    customer = _get_customer_for(user, cid)
+    payload = retention.data_export(customer)
+    body = json.dumps(payload, indent=2, default=str)
+    fname = f"data-export-customer-{cid}.json"
+    return Response(body, mimetype="application/json", headers={
+        "Content-Disposition": f'attachment; filename="{fname}"'})
+
+
+@api.route("/retention", methods=["GET"])
+@permission_required("retention.manage")
+def retention_dashboard(user):
+    from api.engine import retention
+    from api.models import Organization
+    rows, months = retention.purge_candidates(user.organization_id)
+    org = Organization.query.get(user.organization_id)
+    return jsonify({
+        "retention_months": org.data_retention_months if org else months,
+        "candidates": [{"id": c.id, "name": c.name,
+                        "archived_at": c.archived_at.isoformat() if c.archived_at else None}
+                       for c in rows],
+    }), 200
+
+
+@api.route("/retention/policy", methods=["PUT"])
+@permission_required("retention.manage")
+def set_retention_policy(user):
+    from api.engine import retention
+    body = request.get_json(silent=True) or {}
+    months = body.get("months")
+    if months is None or int(months) < 0:
+        raise APIException("months must be a non-negative integer", status_code=400)
+    org = retention.set_retention(user.organization_id, int(months), actor=user)
+    return jsonify({"retention_months": org.data_retention_months}), 200
+
+
+@api.route("/retention/purge", methods=["POST"])
+@permission_required("retention.manage")
+def run_retention_purge(user):
+    from api.engine import retention
+    dry = (request.get_json(silent=True) or {}).get("dry_run", False)
+    result = retention.purge_due(user.organization_id, actor=user, dry_run=bool(dry))
+    return jsonify(result), 200
 
 
 # ---------------------------------------------------------------------------

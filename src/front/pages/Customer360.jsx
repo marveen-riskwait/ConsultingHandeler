@@ -273,6 +273,12 @@ export const Customer360 = () => {
               <i className="fa-solid fa-wand-magic-sparkles" /> {enriching ? "Enriching…" : "Enrich"}
             </button>
           )}
+          {can(store.user, "data.export") && (
+            <a className="btn btn-outline-secondary" href={api.dataExportUrl(id)}
+              title="Export everything held on this subject (GDPR right of access)">
+              <i className="fa-solid fa-file-export" /> Export data
+            </a>
+          )}
           <button className="btn btn-co" onClick={runScreening} disabled={screening}>
             <i className="fa-solid fa-magnifying-glass" /> {screening ? "Screening…" : "Run screening"}
           </button>

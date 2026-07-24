@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { to: "/management", icon: "fa-chart-line", label: "Management", permission: "management.view" },
   { to: "/regulatory", icon: "fa-scale-balanced", label: "Regulatory", permission: "regulatory.view" },
   { to: "/audit", icon: "fa-clipboard-list", label: "Audit", permission: "audit.view" },
+  { to: "/retention", icon: "fa-database", label: "Retention", permission: "retention.manage" },
   { to: "/administration", icon: "fa-gear", label: "Admin", permission: "user.view" },
 ];
 

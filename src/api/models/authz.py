@@ -85,6 +85,9 @@ PERMISSION_CATALOG = [
     ("dualcontrol.view", "View dual-control approval queue"),
     ("dualcontrol.approve", "Approve / reject dual-control requests"),
 
+    ("data.export", "Export a subject's data (right of access)"),
+    ("retention.manage", "Run data-retention purges"),
+
     ("document.view", "View documents"),
     ("document.upload", "Upload documents"),
     ("document.verify", "Verify documents"),
@@ -189,6 +192,7 @@ DEFAULT_ROLE_PERMISSIONS = {
         "document.verify", "audit.view", "customer.delete",
         "sar.approve", "sar.submit",
         "dualcontrol.view", "dualcontrol.approve",
+        "data.export", "retention.manage",
     ]),
 
     "COMPLIANCE_MANAGER": _codes(_ANALYST_BASE, _MANAGER_EXTRA),
@@ -201,12 +205,13 @@ DEFAULT_ROLE_PERMISSIONS = {
         # The MLRO is the classic SAR filer to the FIU.
         "sar.approve", "sar.submit",
         "dualcontrol.view", "dualcontrol.approve",
+        "data.export", "retention.manage",
     ]),
 
     "AUDITOR": [
         "workspace.view", "customer.view", "kyc.view", "kyb.view",
         "screening.view", "risk.view", "case.view", "task.view",
-        "transaction.view", "sar.view", "dualcontrol.view",
+        "transaction.view", "sar.view", "dualcontrol.view", "data.export",
         "document.view", "workflow.view", "rule.view", "audit.view",
         "regulatory.view", "management.view", "management.team_view",
         "management.performance_view",

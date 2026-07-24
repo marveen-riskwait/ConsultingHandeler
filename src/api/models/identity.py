@@ -26,12 +26,17 @@ class Organization(db.Model):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    # AML record-keeping retention after a relationship ends (AMLD/FATF: 5y).
+    data_retention_months: Mapped[int] = mapped_column(Integer, default=60,
+                                                       nullable=False,
+                                                       server_default="60")
 
     users: Mapped[list["User"]] = relationship(back_populates="organization")
     customers: Mapped[list["Customer"]] = relationship(back_populates="organization")
 
     def serialize(self):
-        return {"id": self.id, "name": self.name}
+        return {"id": self.id, "name": self.name,
+                "data_retention_months": self.data_retention_months}
 
 
 def _sign_avatar(url):

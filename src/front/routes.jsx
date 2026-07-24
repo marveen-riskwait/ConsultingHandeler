@@ -13,6 +13,7 @@ import { CaseDetail } from "./pages/CaseDetail";
 import { Administration } from "./pages/Administration";
 import { Management } from "./pages/Management";
 import { Approvals } from "./pages/Approvals";
+import { Retention } from "./pages/Retention";
 import { Alerts } from "./pages/Alerts";
 import { Regulatory } from "./pages/Regulatory";
 import { Audit } from "./pages/Audit";
@@ -46,6 +47,7 @@ export const router = createBrowserRouter(
       <Route path="/administration" element={<Administration />} />
       <Route path="/management" element={<Management />} />
       <Route path="/approvals" element={<Approvals />} />
+      <Route path="/retention" element={<Retention />} />
       <Route path="/profile" element={<Profile />} />
     </Route>
   ),

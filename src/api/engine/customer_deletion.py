@@ -18,7 +18,7 @@ from api.models import (
     ScreeningRun, ScreeningMatch, Case, Task, Notification, ComplianceEvent,
     ComplianceAlert, Review, Party, Address, OwnershipRelationship,
     NormalizedComplianceResult, RawProviderResponse, WorkflowInstance,
-    Conversation, ACTIVE_MATCH_STATUSES,
+    Conversation, ACTIVE_MATCH_STATUSES, utcnow,
 )
 from api.engine import audit
 
@@ -115,9 +115,11 @@ def delete_customer(customer, actor, reason, force=False):
 
 
 def archive_customer(customer, actor, reason):
-    """The safe alternative: keep everything, take it out of the active book."""
+    """The safe alternative: keep everything, take it out of the active book.
+    Stamps archived_at — the start of the retention clock."""
     old = customer.status
     customer.status = "ARCHIVED"
+    customer.archived_at = utcnow()
     audit.record("CUSTOMER_ARCHIVED", "customer", customer.id, actor=actor,
                  old_value=old, new_value="ARCHIVED", reason=reason,
                  commit=True)
@@ -125,9 +127,11 @@ def archive_customer(customer, actor, reason):
 
 
 def restore_customer(customer, actor, reason):
-    """Undo an archive — what makes "remove from the workspace" reversible."""
+    """Undo an archive — what makes "remove from the workspace" reversible.
+    Clears archived_at: the relationship is active again, so is its clock."""
     old = customer.status
     customer.status = "ACTIVE"
+    customer.archived_at = None
     audit.record("CUSTOMER_RESTORED", "customer", customer.id, actor=actor,
                  old_value=old, new_value="ACTIVE", reason=reason, commit=True)
     return customer

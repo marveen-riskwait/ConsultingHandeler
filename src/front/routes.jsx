@@ -12,6 +12,7 @@ import { Customer360 } from "./pages/Customer360";
 import { CaseDetail } from "./pages/CaseDetail";
 import { Administration } from "./pages/Administration";
 import { Management } from "./pages/Management";
+import { Approvals } from "./pages/Approvals";
 import { Alerts } from "./pages/Alerts";
 import { Regulatory } from "./pages/Regulatory";
 import { Audit } from "./pages/Audit";
@@ -44,6 +45,7 @@ export const router = createBrowserRouter(
       <Route path="/cases/:id" element={<CaseDetail />} />
       <Route path="/administration" element={<Administration />} />
       <Route path="/management" element={<Management />} />
+      <Route path="/approvals" element={<Approvals />} />
       <Route path="/profile" element={<Profile />} />
     </Route>
   ),

@@ -79,10 +79,14 @@ from api.models.transactions import (
 from api.models.sar import (
     SuspiciousActivityReport, REPORT_TYPES, SAR_STATUSES,
 )
+from api.models.dual_control import (
+    DualControlPolicy, DualControlRequest, DC_STATUSES, DC_ACTIONS,
+)
 
 __all__ = [
     "Transaction", "DIRECTIONS", "METHODS", "DETECTORS",
     "SuspiciousActivityReport", "REPORT_TYPES", "SAR_STATUSES",
+    "DualControlPolicy", "DualControlRequest", "DC_STATUSES", "DC_ACTIONS",
     "db", "utcnow",
     "Permission", "Role", "role_permissions", "user_roles", "user_permissions",
     "PERMISSION_CATALOG", "ALL_CODES", "DEFAULT_ROLE_PERMISSIONS",

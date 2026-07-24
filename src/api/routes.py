@@ -968,6 +968,85 @@ def ingest_transactions(user, cid):
 
 
 # ---------------------------------------------------------------------------
+# Dual control (maker-checker)
+# ---------------------------------------------------------------------------
+@api.route("/dual-control", methods=["GET"])
+@permission_required("dualcontrol.view")
+def list_dual_control(user):
+    from api.models import DualControlRequest, User as U
+    q = DualControlRequest.query.filter_by(organization_id=user.organization_id)
+    status = request.args.get("status", "PENDING")
+    if status and status != "ALL":
+        q = q.filter_by(status=status)
+    reqs = q.order_by(DualControlRequest.id.desc()).limit(200).all()
+    names = {u.id: (u.full_name or u.email) for u in U.query.all()}
+    out = []
+    for r in reqs:
+        d = r.serialize()
+        d["requested_by_name"] = names.get(r.requested_by)
+        d["decided_by_name"] = names.get(r.decided_by)
+        out.append(d)
+    return jsonify(out), 200
+
+
+@api.route("/dual-control/<int:req_id>/approve", methods=["POST"])
+@permission_required("dualcontrol.approve")
+def approve_dual_control(user, req_id):
+    from api.models import DualControlRequest
+    from api.engine import dual_control
+    req = DualControlRequest.query.get(req_id)
+    if req is None or req.organization_id != user.organization_id:
+        raise APIException("Request not found", status_code=404)
+    try:
+        dual_control.approve(req, user)
+    except PermissionError as exc:
+        raise APIException(str(exc), status_code=403)
+    except ValueError as exc:
+        raise APIException(str(exc), status_code=409)
+    return jsonify(req.serialize()), 200
+
+
+@api.route("/dual-control/<int:req_id>/reject", methods=["POST"])
+@permission_required("dualcontrol.approve")
+def reject_dual_control(user, req_id):
+    from api.models import DualControlRequest
+    from api.engine import dual_control
+    req = DualControlRequest.query.get(req_id)
+    if req is None or req.organization_id != user.organization_id:
+        raise APIException("Request not found", status_code=404)
+    body = request.get_json(silent=True) or {}
+    try:
+        dual_control.reject(req, user, reason=(body.get("reason") or "").strip())
+    except ValueError as exc:
+        raise APIException(str(exc), status_code=409)
+    return jsonify(req.serialize()), 200
+
+
+@api.route("/dual-control/policy", methods=["GET"])
+@permission_required("dualcontrol.view")
+def get_dual_control_policy(user):
+    from api.models import DualControlPolicy, DC_ACTIONS
+    rows = {p.action_type: p.enabled for p in
+            DualControlPolicy.query.filter_by(organization_id=user.organization_id).all()}
+    return jsonify([{"action_type": a, "enabled": rows.get(a, False)}
+                    for a in DC_ACTIONS]), 200
+
+
+@api.route("/dual-control/policy", methods=["PUT"])
+@permission_required("organization.update")
+def set_dual_control_policy(user):
+    from api.models import DC_ACTIONS
+    from api.engine import dual_control
+    body = request.get_json(silent=True) or {}
+    action = body.get("action_type")
+    if action not in DC_ACTIONS:
+        raise APIException("Unknown action type", status_code=400)
+    dual_control.set_policy(user.organization_id, action,
+                            bool(body.get("enabled")), actor=user)
+    return jsonify({"action_type": action, "enabled": bool(body.get("enabled"))}), 200
+
+
+# ---------------------------------------------------------------------------
 # Suspicious Activity Reports (SAR / STR)
 # ---------------------------------------------------------------------------
 def _get_sar(user, sar_id):
@@ -2960,6 +3039,19 @@ def delete_customer_route(user, cid):
 
     # Only an administrator may override the retention guard.
     force = bool(body.get("force")) and has_permission(user, "organization.update")
+
+    # If the organisation put customer deletion under dual control, the maker's
+    # request is held for a second approval instead of executing now.
+    from api.engine import dual_control
+    if dual_control.is_required(user.organization_id, "CUSTOMER_DELETE"):
+        req = dual_control.open_request(
+            user.organization_id, "CUSTOMER_DELETE",
+            target_type="customer", target_id=customer.id,
+            params={"reason": reason, "force": force}, reason=reason,
+            summary=f"Delete customer «{customer.name}»", actor=user)
+        return jsonify({"dual_control": True, "request": req.serialize(),
+                        "message": "Sent for a second approval."}), 202
+
     try:
         out = customer_deletion.delete_customer(customer, user, reason, force=force)
     except ValueError as exc:

@@ -14,6 +14,7 @@ export const DeleteCustomerModal = ({ customer, onClose, onDeleted, onArchived }
   const [force, setForce] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [pending, setPending] = useState(false);   // held for dual-control approval
 
   useEffect(() => {
     api.deletionCheck(customer.id).then((c) => {
@@ -35,10 +36,13 @@ export const DeleteCustomerModal = ({ customer, onClose, onDeleted, onArchived }
     setBusy(true); setError(null);
     try {
       if (purge) {
-        await api.deleteCustomer(customer.id, {
+        const res = await api.deleteCustomer(customer.id, {
           reason: reason.trim(), confirm_name: confirmName.trim(),
           force: blocked && force,
         });
+        // Under dual control the deletion is not done — it is held for a
+        // second approval. Don't navigate away as though the record is gone.
+        if (res && res.dual_control) { setPending(true); return; }
         onDeleted();
       } else {
         await api.archiveCustomer(customer.id, reason.trim() || "Archived by user");
@@ -50,6 +54,27 @@ export const DeleteCustomerModal = ({ customer, onClose, onDeleted, onArchived }
 
   const blocksPurge = purge && (!nameOk || !reasonOk || (blocked && !(canOverride && force)));
   const c = check?.counts || {};
+
+  if (pending) {
+    return (
+      <div className="cd-backdrop" onClick={onClose}>
+        <div className="co-card cd-modal" onClick={(e) => e.stopPropagation()}>
+          <h4 style={{ marginTop: 0 }}>
+            <i className="fa-solid fa-user-shield" style={{ color: "var(--accent)" }} />{" "}
+            Sent for a second approval
+          </h4>
+          <p className="muted" style={{ fontSize: ".88rem" }}>
+            Deleting a customer is under <b>dual control</b> here. Your request
+            is held in the approvals queue — a different colleague must approve
+            it before anything is erased. Nothing has been deleted yet.
+          </p>
+          <div className="cd-actions">
+            <button className="btn btn-co" onClick={onClose}>Understood</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="cd-backdrop" onClick={onClose}>

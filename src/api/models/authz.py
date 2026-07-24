@@ -82,6 +82,9 @@ PERMISSION_CATALOG = [
     ("sar.approve", "Approve / reject SARs (four-eyes)"),
     ("sar.submit", "File approved SARs with the FIU"),
 
+    ("dualcontrol.view", "View dual-control approval queue"),
+    ("dualcontrol.approve", "Approve / reject dual-control requests"),
+
     ("document.view", "View documents"),
     ("document.upload", "Upload documents"),
     ("document.verify", "Verify documents"),
@@ -142,6 +145,7 @@ _MANAGER_EXTRA = [
     "case.assign", "case.reassign", "case.escalate",
     "task.assign", "workflow.configure", "audit.view", "user.view",
     "sar.approve",   # oversight approval; filing stays with officer / MLRO
+    "dualcontrol.view", "dualcontrol.approve",
 ]
 
 _ADMIN_CORE = [
@@ -159,6 +163,9 @@ _ADMIN_CORE = [
     "audit.view",
     "management.view", "management.team_view",
     "management.performance_view", "management.assign_work",
+    # Governance oversight: admin configures dual-control policy and sees the
+    # queue, but never approves a compliance act (dualcontrol.approve withheld).
+    "dualcontrol.view",
 ]
 
 # name -> permission codes. Technical admins deliberately lack compliance
@@ -181,6 +188,7 @@ DEFAULT_ROLE_PERMISSIONS = {
         "case.assign", "case.escalate", "case.close", "case.approve",
         "document.verify", "audit.view", "customer.delete",
         "sar.approve", "sar.submit",
+        "dualcontrol.view", "dualcontrol.approve",
     ]),
 
     "COMPLIANCE_MANAGER": _codes(_ANALYST_BASE, _MANAGER_EXTRA),
@@ -192,12 +200,13 @@ DEFAULT_ROLE_PERMISSIONS = {
         "audit.view", "regulatory.view", "customer.delete",
         # The MLRO is the classic SAR filer to the FIU.
         "sar.approve", "sar.submit",
+        "dualcontrol.view", "dualcontrol.approve",
     ]),
 
     "AUDITOR": [
         "workspace.view", "customer.view", "kyc.view", "kyb.view",
         "screening.view", "risk.view", "case.view", "task.view",
-        "transaction.view", "sar.view",
+        "transaction.view", "sar.view", "dualcontrol.view",
         "document.view", "workflow.view", "rule.view", "audit.view",
         "regulatory.view", "management.view", "management.team_view",
         "management.performance_view",

@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { to: "/assistant", icon: "fa-robot", label: "Copilot", permission: "workspace.view" },
   { to: "/customers", icon: "fa-users", label: "Customers", permission: "customer.view" },
   { to: "/alerts", icon: "fa-triangle-exclamation", label: "Alerts", permission: "case.view" },
+  { to: "/approvals", icon: "fa-user-shield", label: "Approvals", permission: "dualcontrol.view" },
   { to: "/management", icon: "fa-chart-line", label: "Management", permission: "management.view" },
   { to: "/regulatory", icon: "fa-scale-balanced", label: "Regulatory", permission: "regulatory.view" },
   { to: "/audit", icon: "fa-clipboard-list", label: "Audit", permission: "audit.view" },

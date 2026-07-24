@@ -658,15 +658,19 @@ const RiskModelTab = () => {
 };
 
 // ------------------------------------------------------- Organization tab
+const DC_LABELS = { CUSTOMER_DELETE: "Deleting a customer" };
+
 const OrganizationTab = ({ me }) => {
   const [data, setData] = useState(null);
   const [name, setName] = useState("");
   const [error, setError] = useState(null);
   const [saved, setSaved] = useState(false);
+  const [policy, setPolicy] = useState([]);
 
   useEffect(() => {
     api.organization().then((d) => { setData(d); setName(d.organization.name); })
       .catch((e) => setError(e.message));
+    api.dualControlPolicy().then(setPolicy).catch(() => {});
   }, []);
 
   const save = async (e) => {
@@ -675,21 +679,54 @@ const OrganizationTab = ({ me }) => {
     try { await api.updateOrganization({ name }); setSaved(true); }
     catch (err) { setError(err.message); }
   };
+  const togglePolicy = async (p) => {
+    setError(null);
+    try {
+      await api.setDualControlPolicy(p.action_type, !p.enabled);
+      setPolicy(policy.map((x) => x.action_type === p.action_type ? { ...x, enabled: !x.enabled } : x));
+    } catch (err) { setError(err.message); }
+  };
 
   if (!data) return <div className="empty">Loading…</div>;
   return (
-    <div className="co-card" style={{ maxWidth: 560 }}>
-      <div className="section-title">Organization settings</div>
-      {error && <div className="alert alert-danger py-2">{error}</div>}
-      {saved && <div className="alert alert-success py-2">Saved.</div>}
-      <form onSubmit={save}>
-        <label className="form-label">Organization name</label>
-        <input className="form-control" value={name} onChange={(e) => setName(e.target.value)} />
-        <div className="muted mt-2" style={{ fontSize: ".85rem" }}>
-          {data.member_count} member(s) · {data.departments.length} department(s) · {data.teams.length} team(s)
-        </div>
-        {can(me, "organization.update") && <button className="btn btn-co mt-3">Save</button>}
-      </form>
+    <div style={{ maxWidth: 560 }}>
+      <div className="co-card">
+        <div className="section-title">Organization settings</div>
+        {error && <div className="alert alert-danger py-2">{error}</div>}
+        {saved && <div className="alert alert-success py-2">Saved.</div>}
+        <form onSubmit={save}>
+          <label className="form-label">Organization name</label>
+          <input className="form-control" value={name} onChange={(e) => setName(e.target.value)} />
+          <div className="muted mt-2" style={{ fontSize: ".85rem" }}>
+            {data.member_count} member(s) · {data.departments.length} department(s) · {data.teams.length} team(s)
+          </div>
+          {can(me, "organization.update") && <button className="btn btn-co mt-3">Save</button>}
+        </form>
+      </div>
+
+      <div className="co-card" style={{ marginTop: "1rem" }}>
+        <div className="section-title">Dual control (four-eyes)</div>
+        <p className="muted" style={{ fontSize: ".85rem" }}>
+          When on, the act is held for a second colleague to approve in the
+          Approvals queue — the person who requests it can never approve it.
+        </p>
+        {policy.map((p) => (
+          <div className="work-row" key={p.action_type}>
+            <div className="grow">
+              <div className="title">{DC_LABELS[p.action_type] || p.action_type}</div>
+              <div className="meta">{p.enabled ? "Requires a second approval" : "Executes directly"}</div>
+            </div>
+            {can(me, "organization.update") ? (
+              <button className={`btn btn-sm ${p.enabled ? "btn-outline-danger" : "btn-outline-success"}`}
+                onClick={() => togglePolicy(p)}>
+                {p.enabled ? "Turn off" : "Turn on"}
+              </button>
+            ) : (
+              <span className={`chip ${p.enabled ? "LOW" : "INFO"}`}>{p.enabled ? "ON" : "OFF"}</span>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 };

@@ -76,9 +76,13 @@ from api.models.chat import ChatRoom, ChatMember, ChatMessage, CHAT_MESSAGE_KIND
 from api.models.transactions import (
     Transaction, DIRECTIONS, METHODS, DETECTORS,
 )
+from api.models.sar import (
+    SuspiciousActivityReport, REPORT_TYPES, SAR_STATUSES,
+)
 
 __all__ = [
     "Transaction", "DIRECTIONS", "METHODS", "DETECTORS",
+    "SuspiciousActivityReport", "REPORT_TYPES", "SAR_STATUSES",
     "db", "utcnow",
     "Permission", "Role", "role_permissions", "user_roles", "user_permissions",
     "PERMISSION_CATALOG", "ALL_CODES", "DEFAULT_ROLE_PERMISSIONS",

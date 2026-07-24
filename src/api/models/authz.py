@@ -77,6 +77,11 @@ PERMISSION_CATALOG = [
     ("transaction.view", "View transactions & monitoring"),
     ("transaction.ingest", "Ingest / import transactions"),
 
+    ("sar.view", "View suspicious activity reports"),
+    ("sar.create", "Draft suspicious activity reports"),
+    ("sar.approve", "Approve / reject SARs (four-eyes)"),
+    ("sar.submit", "File approved SARs with the FIU"),
+
     ("document.view", "View documents"),
     ("document.upload", "Upload documents"),
     ("document.verify", "Verify documents"),
@@ -122,6 +127,9 @@ _ANALYST_BASE = [
     "case.view", "case.create", "case.update",
     "task.view", "task.create", "task.complete",
     "transaction.view", "transaction.ingest",
+    # Draft a SAR; approving and filing it belong to the officer / MLRO,
+    # and four-eyes forbids approving one's own draft.
+    "sar.view", "sar.create",
     # Reading a passport scan and sending back a blurry one is first-line
     # work; approving the customer stays with the officer (kyc.approve).
     "document.view", "document.upload", "document.verify",
@@ -133,6 +141,7 @@ _MANAGER_EXTRA = [
     "management.performance_view", "management.assign_work",
     "case.assign", "case.reassign", "case.escalate",
     "task.assign", "workflow.configure", "audit.view", "user.view",
+    "sar.approve",   # oversight approval; filing stays with officer / MLRO
 ]
 
 _ADMIN_CORE = [
@@ -171,6 +180,7 @@ DEFAULT_ROLE_PERMISSIONS = {
         "risk.override", "risk.approve",
         "case.assign", "case.escalate", "case.close", "case.approve",
         "document.verify", "audit.view", "customer.delete",
+        "sar.approve", "sar.submit",
     ]),
 
     "COMPLIANCE_MANAGER": _codes(_ANALYST_BASE, _MANAGER_EXTRA),
@@ -180,12 +190,14 @@ DEFAULT_ROLE_PERMISSIONS = {
         "screening.confirm_match", "risk.override", "risk.approve",
         "case.escalate", "case.close", "case.approve",
         "audit.view", "regulatory.view", "customer.delete",
+        # The MLRO is the classic SAR filer to the FIU.
+        "sar.approve", "sar.submit",
     ]),
 
     "AUDITOR": [
         "workspace.view", "customer.view", "kyc.view", "kyb.view",
         "screening.view", "risk.view", "case.view", "task.view",
-        "transaction.view",
+        "transaction.view", "sar.view",
         "document.view", "workflow.view", "rule.view", "audit.view",
         "regulatory.view", "management.view", "management.team_view",
         "management.performance_view",

@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import useGlobalReducer from "../hooks/useGlobalReducer";
 import { api } from "../services/api";
 import { can } from "../permissions/can";
+import { SarPanel } from "../components/SarPanel";
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : "—");
 
@@ -267,6 +268,12 @@ export const CaseDetail = () => {
               </>
             )}
           </div>
+
+          <SarPanel customerId={customer.id} caseId={cs.id}
+            indicators={(sanctionsMatch ? ["SANCTIONS"] : [])
+              .concat((related_events || [])
+                .filter((e) => e.event_type === "TRANSACTION_ALERT")
+                .flatMap((e) => (e.payload?.detectors || []).map((d) => d.code)))} />
         </div>
       </div>
     </>

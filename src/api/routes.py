@@ -7,7 +7,7 @@ screening -> event -> rules -> risk -> case/task/notification -> (human) decisio
 import os
 from datetime import timedelta
 
-from flask import request, jsonify, Blueprint
+from flask import request, jsonify, Blueprint, Response
 from flask_cors import CORS
 from sqlalchemy import func
 
@@ -965,6 +965,130 @@ def ingest_transactions(user, cid):
             flagged += 1
     return jsonify({"ingested": len(out), "flagged": flagged,
                     "transactions": out}), 201
+
+
+# ---------------------------------------------------------------------------
+# Suspicious Activity Reports (SAR / STR)
+# ---------------------------------------------------------------------------
+def _get_sar(user, sar_id):
+    from api.models import SuspiciousActivityReport
+    sar = SuspiciousActivityReport.query.get(sar_id)
+    if sar is None or sar.organization_id != user.organization_id:
+        raise APIException("Report not found", status_code=404)
+    return sar
+
+
+@api.route("/sars", methods=["GET"])
+@permission_required("sar.view")
+def list_sars(user):
+    from api.models import SuspiciousActivityReport, User as U
+    q = SuspiciousActivityReport.query.filter_by(organization_id=user.organization_id)
+    status = request.args.get("status")
+    if status:
+        q = q.filter_by(status=status)
+    sars = q.order_by(SuspiciousActivityReport.id.desc()).limit(200).all()
+    names = {u.id: (u.full_name or u.email) for u in U.query.all()}
+    out = []
+    for s in sars:
+        d = s.serialize()
+        cust = Customer.query.get(s.customer_id)
+        d["customer_name"] = cust.name if cust else None
+        d["created_by_name"] = names.get(s.created_by)
+        d["approved_by_name"] = names.get(s.approved_by)
+        out.append(d)
+    return jsonify(out), 200
+
+
+@api.route("/customers/<int:cid>/sars", methods=["POST"])
+@permission_required("sar.create")
+def create_sar(user, cid):
+    from api.engine import sar_service
+    customer = _get_customer_for(user, cid)
+    body = request.get_json(silent=True) or {}
+    sar = sar_service.create_draft(
+        customer, report_type=body.get("report_type", "STR"),
+        reason=(body.get("reason") or "").strip(),
+        indicators=body.get("indicators") or [],
+        transaction_ids=body.get("transaction_ids") or [],
+        case_id=body.get("case_id"), actor=user)
+    return jsonify(sar.serialize()), 201
+
+
+@api.route("/sars/<int:sar_id>", methods=["PATCH"])
+@permission_required("sar.create")
+def update_sar(user, sar_id):
+    from api.engine import sar_service
+    sar = _get_sar(user, sar_id)
+    body = request.get_json(silent=True) or {}
+    try:
+        sar_service.update_draft(sar, reason=body.get("reason"),
+                                 indicators=body.get("indicators"),
+                                 transaction_ids=body.get("transaction_ids"),
+                                 report_type=body.get("report_type"), actor=user)
+    except ValueError as exc:
+        raise APIException(str(exc), status_code=409)
+    return jsonify(sar.serialize()), 200
+
+
+@api.route("/sars/<int:sar_id>/submit-for-approval", methods=["POST"])
+@permission_required("sar.create")
+def submit_sar_for_approval(user, sar_id):
+    from api.engine import sar_service
+    sar = _get_sar(user, sar_id)
+    try:
+        sar_service.submit_for_approval(sar, actor=user)
+    except ValueError as exc:
+        raise APIException(str(exc), status_code=409)
+    return jsonify(sar.serialize()), 200
+
+
+@api.route("/sars/<int:sar_id>/approve", methods=["POST"])
+@permission_required("sar.approve")
+def approve_sar(user, sar_id):
+    from api.engine import sar_service
+    sar = _get_sar(user, sar_id)
+    try:
+        sar_service.approve(sar, actor=user)
+    except PermissionError as exc:
+        raise APIException(str(exc), status_code=403)
+    except ValueError as exc:
+        raise APIException(str(exc), status_code=409)
+    return jsonify(sar.serialize()), 200
+
+
+@api.route("/sars/<int:sar_id>/reject", methods=["POST"])
+@permission_required("sar.approve")
+def reject_sar(user, sar_id):
+    from api.engine import sar_service
+    sar = _get_sar(user, sar_id)
+    body = request.get_json(silent=True) or {}
+    try:
+        sar_service.reject(sar, actor=user, reason=(body.get("reason") or "").strip())
+    except ValueError as exc:
+        raise APIException(str(exc), status_code=409)
+    return jsonify(sar.serialize()), 200
+
+
+@api.route("/sars/<int:sar_id>/mark-submitted", methods=["POST"])
+@permission_required("sar.submit")
+def mark_sar_submitted(user, sar_id):
+    from api.engine import sar_service
+    sar = _get_sar(user, sar_id)
+    try:
+        sar_service.mark_submitted(sar, actor=user)
+    except ValueError as exc:
+        raise APIException(str(exc), status_code=409)
+    return jsonify(sar.serialize()), 200
+
+
+@api.route("/sars/<int:sar_id>/export.xml", methods=["GET"])
+@permission_required("sar.view")
+def export_sar_goaml(user, sar_id):
+    from api.engine import sar_service
+    sar = _get_sar(user, sar_id)
+    xml = sar_service.build_goaml_xml(sar)
+    return Response(xml, mimetype="application/xml", headers={
+        "Content-Disposition": f'attachment; filename="{sar.reference}-goAML.xml"'})
 
 
 @api.route("/customers/<int:cid>/requirements", methods=["GET"])
